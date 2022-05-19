@@ -12,7 +12,16 @@ import sys
 import threading
 from threading import *
 
+localIP     = "127.0.0.1"
 
+localPort   = 20001
+
+bufferSize  = 1024
+
+UDPServerSocket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
+
+UDPServerSocket.bind((localIP, localPort))
+serverAddressPort   = ("127.0.0.1", 20002)
 
 
 listening = True
@@ -21,16 +30,11 @@ send_rcv = False
 data=[]
 def listener():
     global send_rcv
-    localIP     = "127.0.0.1"
-
-    localPort   = 20001
-
-    bufferSize  = 1024
-
-    UDPServerSocket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
-
-    UDPServerSocket.bind((localIP, localPort))
-    serverAddressPort   = ("127.0.0.1", 20002)
+    global localIP
+    global localPort
+    global bufferSize
+    global UDPServerSocket
+    global serverAddressPort
     print("UDP server up and listening")
     connecting = True
     while(connecting == True):
@@ -86,6 +90,7 @@ def printer():
         if send_rcv == False:
             continue
         else:
+            print(send_rcv)
             try:
                 read = data.pop(0)
                 ts = read['ts']
@@ -109,11 +114,38 @@ def printer():
         #         time.sleep(0.01)
         #     except:
         #         continue
-t1 = threading.Thread(target=listener, daemon=True) 
+def sender():
+    global send_rcv
+    global localIP
+    global localPort
+    global bufferSize
+    global serverAddressPort
+    global UDPServerSocket
+    print("Master Side Initialized")
+    while(True):
+        if send_rcv == False:
+            continue
+        else:
+            
+            raw_input = "Master"
+            
+            delimiter = str.encode("sequenceno",'ANSI')
+            while(send_rcv == True):
+                try:
+                    payload = str.encode(raw_input,'ANSI')
+                    ts = time.time()
+                    UDPServerSocket.sendto((payload+delimiter+struct.pack('d',ts)), serverAddressPort)
+                    
+                    time.sleep(.02)
+                    #raw_input = input(">> ")
+                except KeyboardInterrupt:
+                    sys.exit()
+t1 = threading.Thread(target=listener, daemon=True)
 t2 = threading.Thread(target=printer, daemon=True)
-# t1.setDaemon(True)
-# t2.setDaemon(True)
+t3 = threading.Thread(target=sender, daemon=True)
 t1.start()
 t2.start()
+t3.start()
 t1.join()
 t2.join()
+t3.join()
