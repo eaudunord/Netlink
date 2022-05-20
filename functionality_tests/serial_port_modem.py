@@ -10,7 +10,7 @@ import serial
 from datetime import datetime
 from datetime import timedelta
 import time
-
+from modem import Modem as Modem
 
 ser = serial.Serial('COM5', 9600, timeout=1)  # open serial port
 print(ser.name)         # check which port was really used

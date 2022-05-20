@@ -23,13 +23,18 @@ udpPort = udp_ports[side]
 #PORT = 65432  # Port to listen on (non-privileged ports are > 1023)
 state = "disconnected"
 jitterBuff = 0.04
+udp = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
+udp.bind((HOST, udpPort))
+sync_delay = 0
+start = 0
 
-with socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM) as udp:
-    udp.bind((HOST, udpPort))
+# with socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM) as udp:
+#     udp.bind((HOST, udpPort))
 
 def initConnection(side):
     global opponent
     global udpPort
+    global start
     ip = requests.get('https://api.ipify.org', verify=False).content.decode('utf8')
     #print(f'My IP address is: {ip}')
     if side == "slave":
@@ -48,6 +53,9 @@ def initConnection(side):
                         opponent = data.split(b'ip')[1].decode('utf-8')
                         print("Ready for Netlink!")
                         print(f'Opponent IP: {opponent}')
+                        ts = time.time()
+                        start = ts + 0.2 
+                        conn.sendall(struct.pack('d',ts))
                         return "connected"
                     if not data:
                         break
@@ -63,6 +71,10 @@ def initConnection(side):
                 opponent = data.split(b'ip')[1].decode('utf-8')
                 print("Ready for Netlink!")
                 print(f'Opponent IP: {opponent}')
+                ts = tcp.recv(1024)
+                st = struct.unpack('d',ts)[0]
+                delay = st+0.2-time.time()
+                start = delay + time.time()
                 return "connected"
                 
     else:
@@ -135,6 +147,8 @@ t2 = threading.Thread(target=printer, daemon=True)
 t3 = threading.Thread(target=sender, daemon=True)
 state = initConnection(side)
 print(state)
+sync_delay = start-time.time()
+time.sleep(sync_delay) 
                 
 if state == "connected":
     t1.start()
