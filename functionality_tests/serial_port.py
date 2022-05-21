@@ -20,11 +20,12 @@ payload = []
 i=0
 poll = True
 now = time.time()
+time.sleep(5)
 while (poll == True):
     data = ser.read(1)
-    # print(data)
+    print(data)
     interval = (time.time()-now)*1000
-    print(interval)
+    # print(interval)
     now = time.time()
     # payload.append(data)
     i+=1
