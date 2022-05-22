@@ -103,6 +103,8 @@ def listener():
             raw_sequence = message.split(b'sequenceno')[1]
             sequence = struct.unpack('d',raw_sequence)[0]
             data.append({'ts':sequence,'data':payload})
+            if len(payload) == 0:
+                print('empty')
             print(payload)
         except KeyboardInterrupt:
             print("Error thread 1")
