@@ -16,12 +16,13 @@ import threading
 import serial
 from datetime import datetime
 from modemClass import Modem
+
 side = ""
 com_port = sys.argv[1]
 device_and_speed = [com_port,57600]
-opponent = ""
+opponent = socket.gethostbyname(socket.gethostname())
 data = []
-HOST = "127.0.0.1"
+HOST = socket.gethostbyname(socket.gethostname())
 tcpPort = tcp_ports['slave']
 
 #PORT = 65432  # Port to listen on (non-privileged ports are > 1023)
@@ -30,7 +31,10 @@ jitterBuff = 0.0
 poll_rate = 0.01
 sync_delay = 0
 start = 0
-
+try:
+    opponent = sys.argv[2]
+except:
+    pass
 
 # with socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM) as udp:
 #     udp.bind((HOST, udpPort))
@@ -56,9 +60,9 @@ def initConnection(ms):
                 print("Sending Ring")
                 ser.write("RING\r\n")
                 ser.write("CONNECT\r\n")
-                opponent = data.split(b'ip')[1].decode('utf-8')
+                # opponent = data.split(b'ip')[1].decode('utf-8')
                 print("Ready for Netlink!")
-                print('Opponent IP: %s'% opponent)
+                # print('Opponent IP: %s'% opponent)
                 ts = time.time()
                 start = ts + 0.2 
                 conn.sendall(struct.pack('d',ts))
@@ -70,13 +74,13 @@ def initConnection(ms):
         PORT = tcpPort
         #udpPort = udp_ports['master']
         tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        tcp.connect((HOST, PORT))
+        tcp.connect((opponent, PORT))
         tcp.sendall(b"readyip"+(ip))
         data = tcp.recv(1024)
         if data.split(b'ip')[0] == b'g2g':
-            opponent = data.split(b'ip')[1].decode('utf-8')
+            # opponent = data.split(b'ip')[1].decode('utf-8')
             print("Ready for Netlink!")
-            print('Opponent IP: %s'% opponent)
+            # print('Opponent IP: %s'% opponent)
             ts = tcp.recv(1024)
             st = struct.unpack('d',ts)[0]
             delay = st+0.2-time.time()
@@ -122,8 +126,6 @@ def printer():
             if len(toSend) >0:
                 print('latency: %sms' % latency)
                 print(toSend)
-                if "CARRIER" in toSend:
-                    state = "disconnected"
                     
             # time.sleep(poll_rate)
             ser.write(toSend)
@@ -144,13 +146,16 @@ def sender():
             ser.read(1024)
             first_run = False
         raw_input = ser.read(1024)
+        if "NO CARRIER" in raw_input:
+            state = "disconnected"
+            break
         # delimiter = str.encode("sequenceno",'ANSI')
         delimiter = "sequenceno"
         try:
             # payload = str.encode(raw_input,'ANSI')
             payload = raw_input
             ts = time.time()
-            udp.sendto((payload+delimiter+struct.pack('d',ts)), (HOST,oppPort))
+            udp.sendto((payload+delimiter+struct.pack('d',ts)), (opponent,oppPort))
             
             # time.sleep(.02)
             #raw_input = input(">> ")
