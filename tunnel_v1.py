@@ -13,10 +13,11 @@ import requests
 import struct
 import time
 import threading
+import serial
 
 side = sys.argv[1]
 try:
-    print(sys.argv[2])
+    com_port = sys.argv[2]
 except:
     pass
 opponent = ""
@@ -31,6 +32,7 @@ udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 udp.bind((HOST, udpPort))
 sync_delay = 0
 start = 0
+ser = serial.Serial(com_port, 9600, timeout=0.01)
 
 # with socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM) as udp:
 #     udp.bind((HOST, udpPort))
@@ -102,6 +104,8 @@ def listener():
             sys.exit()
                 
 def printer():
+    global com_port
+
     first_run = True
     print("I'm the printer")
     while(True):
@@ -120,6 +124,7 @@ def printer():
                 latency = round(((time.time() - ts)*1000),0)
                 print('latency: %sms' % latency)
                 time.sleep(0.02)
+                ser.write(toSend)
             except:
                 #time.sleep(.01)
                 continue
@@ -131,7 +136,7 @@ def sender():
     if side == 'master':
         oppPort = udp_ports['slave']
     while(state == "connected"):
-        raw_input = side
+        raw_input = ser.read(1)
         # delimiter = str.encode("sequenceno",'ANSI')
         delimiter = "sequenceno"
         try:
