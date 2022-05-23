@@ -64,7 +64,7 @@ def initConnection(ms):
                 print("Ready for Netlink!")
                 # print('Opponent IP: %s'% opponent)
                 ts = time.time()
-                start = ts + 0.2 
+                start = ts + 0.3 
                 conn.sendall(struct.pack('d',ts))
                 return "connected"
             if not data:
@@ -96,16 +96,15 @@ def listener():
     while(state == "connected"):
         try:
             # print("test")
-            time.sleep(jitterBuff)
+            # time.sleep(jitterBuff)
             packet = udp.recvfrom(1024)
             message = packet[0]
             payload = message.split(b'sequenceno')[0]
             raw_sequence = message.split(b'sequenceno')[1]
             sequence = struct.unpack('d',raw_sequence)[0]
             data.append({'ts':sequence,'data':payload})
-            if len(payload) == 0:
-                print('empty')
-            print(payload)
+            if len(payload) > 0:
+                print(payload)
         except KeyboardInterrupt:
             print("Error thread 1")
             sys.exit()

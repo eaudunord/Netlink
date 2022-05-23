@@ -102,11 +102,12 @@ def listener():
             payload = message.split(b'sequenceno')[0]
             raw_sequence = message.split(b'sequenceno')[1]
             sequence = struct.unpack('d',raw_sequence)[0]
-            if len(payload) == 0:
-                payload = "emptynull"
-            data.append({'ts':sequence,'data':payload})
             if len(payload) > 0:
                 print(payload)
+            # if len(payload) == 0:
+                # payload = "emptynull"
+            data.append({'ts':sequence,'data':payload})
+            
         except KeyboardInterrupt:
             print("Error thread 1")
             sys.exit()
@@ -121,11 +122,11 @@ def printer():
             read = data.pop(0)
             ts = read['ts']
             toSend = read['data']
-            if toSend == "emptynull":
-                time.sleep(poll_rate)
-                continue
+            # if toSend == "emptynull":
+            #     time.sleep(poll_rate)
+            #     continue
             if first_run == True:
-                time.sleep(jitterBuff)
+                # time.sleep(jitterBuff)
                 first_run = False
             #print(toSend)
             latency = round(((time.time() - ts)*1000),0)
@@ -133,7 +134,7 @@ def printer():
                 print('latency: %sms' % latency)
                 print(toSend)
                     
-            time.sleep(poll_rate)
+            # time.sleep(poll_rate)
             ser.write(toSend)
         except:
             #time.sleep(.01)
@@ -148,10 +149,12 @@ def sender():
     if side == 'master':
         oppPort = udp_ports['slave']
     while(state == "connected"):
-        if first_run == True:
-            ser.read(1024)
-            first_run = False
+        # if first_run == True:
+        #     ser.read(1024)
+        #     first_run = False
         raw_input = ser.read(1024)
+        if len(raw_input) == 0:
+            continue
         if "NO CARRIER" in raw_input:
             state = "disconnected"
             break
@@ -167,6 +170,8 @@ def sender():
             #raw_input = input(">> ")
         except KeyboardInterrupt:
             sys.exit()
+        except ConnectionResetError:
+            continue
             
 def process():
     #This is nearly identical to the dreampi connection script except for mode == "CONNECTED"
@@ -310,7 +315,7 @@ ser = serial.Serial(com_port, device_and_speed[1], timeout=poll_rate)
 state = initConnection(side)
 print(state)
 sync_delay = start-time.time()
-time.sleep(sync_delay) 
+# time.sleep(sync_delay) 
                 
 if state == "connected":
     t1.start()
