@@ -13,8 +13,16 @@ import requests
 import struct
 import time
 import threading
+import random
 
-side = sys.argv[1]
+side = ""
+try:
+    side = sys.argv[1]
+except:
+    pass
+if side == "":
+    side = raw_input("Side >> ")
+    
 try:
     print(sys.argv[2])
 except:
@@ -26,9 +34,10 @@ tcpPort = tcp_ports['slave']
 udpPort = udp_ports[side]
 #PORT = 65432  # Port to listen on (non-privileged ports are > 1023)
 state = "disconnected"
-jitterBuff = 0.04
+jitterBuff = 0.01
+rate = 1.0
 udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-udp.bind((HOST, udpPort))
+
 sync_delay = 0
 start = 0
 
@@ -39,8 +48,9 @@ def initConnection(ms):
     global opponent
     global udpPort
     global start
-    ip = requests.get('https://api.ipify.org', verify=False).content.decode('utf8')
+    # ip = requests.get('https://api.ipify.org', verify=False).content.decode('utf8')
     #print(f'My IP address is: {ip}')
+    ip = str(3)
     if ms == "slave":
         print("I'm slave")
         PORT = tcpPort
@@ -91,6 +101,7 @@ def listener():
             # print("test")
             # time.sleep(1)
             packet = udp.recvfrom(1024)
+            time.sleep(float((random.randint(0, 6)))/1000) #simulate network jitter
             message = packet[0]
             payload = message.split(b'sequenceno')[0]
             raw_sequence = message.split(b'sequenceno')[1]
@@ -114,14 +125,14 @@ def printer():
                 ts = read['ts']
                 toSend = read['data']
                 if first_run == True:
-                    time.sleep(jitterBuff)
+                    # time.sleep(jitterBuff)
                     first_run = False
                 #print(toSend)
                 latency = round(((time.time() - ts)*1000),0)
                 print('latency: %sms' % latency)
-                time.sleep(0.02)
+                # time.sleep(rate)
             except:
-                #time.sleep(.01)
+                # time.sleep(rate)
                 continue
             
 def sender():
@@ -140,10 +151,12 @@ def sender():
             ts = time.time()
             udp.sendto((payload+delimiter+struct.pack('d',ts)), (HOST,oppPort))
             
-            time.sleep(.02)
+            time.sleep(rate)
             #raw_input = input(">> ")
         except KeyboardInterrupt:
             sys.exit()
+        except ConnectionResetError:
+            continue
             
 
                 
@@ -156,9 +169,10 @@ t3 = threading.Thread(target=sender)
 state = initConnection(side)
 print(state)
 sync_delay = start-time.time()
-time.sleep(sync_delay) 
+# time.sleep(sync_delay) 
                 
 if state == "connected":
+    udp.bind((HOST, udpPort))
     t1.start()
     t2.start()
     t3.start()

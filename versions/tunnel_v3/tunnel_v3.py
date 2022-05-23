@@ -18,7 +18,12 @@ from datetime import datetime
 from modemClass import Modem
 
 side = ""
-com_port = sys.argv[1]
+com_port = ""
+try:
+    com_port = sys.argv[1]
+except:
+    print("please enter a com port e.g COM4 as an argument when calling the script")
+    sys.exit()
 device_and_speed = [com_port,57600]
 opponent = socket.gethostbyname(socket.gethostname())
 data = []
@@ -27,7 +32,7 @@ tcpPort = tcp_ports['slave']
 
 #PORT = 65432  # Port to listen on (non-privileged ports are > 1023)
 state = "disconnected"
-jitterBuff = 0.02
+jitterBuff = 0.0
 poll_rate = 0.01
 sync_delay = 0
 start = 0
@@ -43,7 +48,8 @@ def initConnection(ms):
     
     global opponent
     global start
-    ip = requests.get('https://api.ipify.org').content.decode('utf8')
+    # ip = requests.get('https://api.ipify.org').content.decode('utf8')
+    ip = ""
     #print(f'My IP address is: {ip}')
     if ms == "slave":
         print("I'm slave")
@@ -125,9 +131,9 @@ def printer():
             # if toSend == "emptynull":
             #     time.sleep(poll_rate)
             #     continue
-            if first_run == True:
-                # time.sleep(jitterBuff)
-                first_run = False
+            # if first_run == True:
+            #     # time.sleep(jitterBuff)
+            #     first_run = False
             #print(toSend)
             latency = round(((time.time() - ts)*1000),0)
             if len(toSend) >0:
@@ -314,10 +320,12 @@ udp.bind((HOST, udp_ports[side]))
 ser = serial.Serial(com_port, device_and_speed[1], timeout=poll_rate)
 state = initConnection(side)
 print(state)
-sync_delay = start-time.time()
+# sync_delay = start-time.time()
 # time.sleep(sync_delay) 
                 
 if state == "connected":
+    udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udp.bind((HOST, udp_ports[side]))
     t1.start()
     t2.start()
     t3.start()
