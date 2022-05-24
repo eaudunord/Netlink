@@ -18,7 +18,10 @@ from datetime import datetime
 from modemClass import Modem
 
 side = ""
-com_port = sys.argv[1]
+try:
+    com_port = sys.argv[1]
+except:
+    com_port = raw_input("Enter a com port e.g. COM4 >> ")
 device_and_speed = [com_port,57600]
 opponent = socket.gethostbyname(socket.gethostname())
 data = []
@@ -27,7 +30,12 @@ tcpPort = tcp_ports['slave']
 
 #PORT = 65432  # Port to listen on (non-privileged ports are > 1023)
 state = "disconnected"
-jitterBuff = 0.0
+try:
+    if sys.argv[3] == "jitterBuff":
+        jitterBuff = True
+except:
+    jitterBuff = False
+
 poll_rate = 0.01
 sync_delay = 0
 start = 0
@@ -43,8 +51,9 @@ def initConnection(ms):
     
     global opponent
     global start
-    ip = requests.get('https://api.ipify.org').content.decode('utf8')
+    # ip = requests.get('https://api.ipify.org').content.decode('utf8')
     #print(f'My IP address is: {ip}')
+    ip = str(3)
     if ms == "slave":
         print("I'm slave")
         PORT = tcpPort
@@ -103,8 +112,8 @@ def listener():
             raw_sequence = message.split(b'sequenceno')[1]
             sequence = struct.unpack('d',raw_sequence)[0]
             data.append({'ts':sequence,'data':payload})
-            if len(payload) > 0:
-                print(payload)
+            # if len(payload) > 0:
+            #     print(payload)
         except KeyboardInterrupt:
             print("Error thread 1")
             sys.exit()
@@ -117,6 +126,8 @@ def printer():
     while(state == "connected"):
         try:
             read = data.pop(0)
+            if jitterBuff == True:
+                time.sleep(0.01)
             ts = read['ts']
             toSend = read['data']
             if first_run == True:
@@ -147,6 +158,9 @@ def sender():
             ser.read(1024)
             first_run = False
         raw_input = ser.read(1024)
+        if len(raw_input) == 0:
+            # print("empty")
+            continue
         if "NO CARRIER" in raw_input:
             state = "disconnected"
             break
@@ -305,7 +319,7 @@ ser = serial.Serial(com_port, device_and_speed[1], timeout=poll_rate)
 state = initConnection(side)
 print(state)
 sync_delay = start-time.time()
-time.sleep(sync_delay) 
+time.sleep(0.2) 
                 
 if state == "connected":
     t1.start()

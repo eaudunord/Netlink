@@ -9,7 +9,7 @@ import socket
 from ports_def import tcp_ports
 from ports_def import udp_ports
 import sys
-import requests
+# import requests
 import struct
 import time
 import threading
@@ -43,7 +43,8 @@ def initConnection(ms):
     
     global opponent
     global start
-    ip = requests.get('https://api.ipify.org').content.decode('utf8')
+    # ip = requests.get('https://api.ipify.org').content.decode('utf8')
+    ip = str(3)
     #print(f'My IP address is: {ip}')
     if ms == "slave":
         print("I'm slave")
@@ -299,15 +300,16 @@ t2 = threading.Thread(target=printer)
 # t2.setDaemon(True)
 t3 = threading.Thread(target=sender)
 # t3.setDaemon(True)
-udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-udp.bind((HOST, udp_ports[side]))
+
 ser = serial.Serial(com_port, device_and_speed[1], timeout=poll_rate)
 state = initConnection(side)
 print(state)
 sync_delay = start-time.time()
-time.sleep(sync_delay) 
+time.sleep(0.2) 
                 
 if state == "connected":
+    udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udp.bind((HOST, udp_ports[side]))
     t1.start()
     t2.start()
     t3.start()

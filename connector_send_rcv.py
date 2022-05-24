@@ -101,7 +101,7 @@ def listener():
             # print("test")
             # time.sleep(1)
             packet = udp.recvfrom(1024)
-            time.sleep(float((random.randint(0, 6)))/1000) #simulate network jitter
+            # time.sleep(float((random.randint(0, 6)))/1000) #simulate network jitter
             message = packet[0]
             payload = message.split(b'sequenceno')[0]
             raw_sequence = message.split(b'sequenceno')[1]
@@ -122,11 +122,12 @@ def printer():
             # print("printing")
             try:
                 read = data.pop(0)
+                time.sleep(0.01)
                 ts = read['ts']
                 toSend = read['data']
-                if first_run == True:
-                    # time.sleep(jitterBuff)
-                    first_run = False
+                # if first_run == True:
+                #     # time.sleep(jitterBuff)
+                #     first_run = False
                 #print(toSend)
                 latency = round(((time.time() - ts)*1000),0)
                 print('latency: %sms' % latency)
