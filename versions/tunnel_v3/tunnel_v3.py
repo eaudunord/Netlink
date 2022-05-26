@@ -21,25 +21,32 @@ if __name__ == "__main__":
     import logging
     logging.basicConfig(level=logging.DEBUG)
     logger = logging.getLogger('dreampi')
-    dial_tone_enabled = "--disable-dial-tone" not in sys.argv
-    modem = Modem(device_and_speed[0], device_and_speed[1], dial_tone_enabled)
+    # dial_tone_enabled = "--disable-dial-tone" not in sys.argv
+    # modem = Modem(device_and_speed[0], device_and_speed[1], dial_tone_enabled)
 
 def digit_parser(modem):
     char = modem._serial.read(1)
     tel_digits = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
+    ip_digits = ['0','1', '2', '3', '4', '5', '6', '7', '8', '9','*']
     if char in tel_digits:
         return {'client':'ppp_internet','dial_string':char,'side':'na'}
     elif char == '0':
         return {'client':'direct_dial','dial_string':char,'side':'slave'}
-    elif char == '#':
+    elif char == '#': #this isn't going to work because DLE precedes all digits dialed. Fix this.
         dial_string = ""
         while (True):
             char = modem._serial.read(1)
             if not char:
-                break
-            if char == '#':
-                break
-            dial_string += char
+                continue
+            if ord(char) == 16:
+                try:
+                    char = modem._serial.read(1)
+                    if char == '#':
+                        break
+                    if char in ip_digits:
+                        dial_string += char
+                except (TypeError, ValueError):
+                    pass
         return {'client':'direct_dial','dial_string':dial_string,'side':'master'}
     else:
         return "nada"
