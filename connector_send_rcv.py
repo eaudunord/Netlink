@@ -27,9 +27,9 @@ try:
     print(sys.argv[2])
 except:
     pass
-opponent = ""
-data = []
+
 HOST = "127.0.0.1"
+data = []
 tcpPort = tcp_ports['slave']
 udpPort = udp_ports[side]
 #PORT = 65432  # Port to listen on (non-privileged ports are > 1023)
@@ -44,13 +44,10 @@ start = 0
 # with socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM) as udp:
 #     udp.bind((HOST, udpPort))
 
-def initConnection(ms):
-    global opponent
+def initConnection(ms, opponent = "127.0.0.1"):
+    
     global udpPort
     global start
-    # ip = requests.get('https://api.ipify.org', verify=False).content.decode('utf8')
-    #print(f'My IP address is: {ip}')
-    ip = str(3)
     if ms == "slave":
         print("I'm slave")
         PORT = tcpPort
@@ -62,8 +59,8 @@ def initConnection(ms):
         while True:
             data = conn.recv(1024)
             if data.split(b'ip')[0] == b'ready':
-                conn.sendall(b'g2gip'+(ip))
-                opponent = data.split(b'ip')[1].decode('utf-8')
+                conn.sendall(b'g2gip')
+                opponent = addr[0]
                 print("Ready for Netlink!")
                 print('Opponent IP: %s'% opponent)
                 ts = time.time()
@@ -77,11 +74,11 @@ def initConnection(ms):
         PORT = tcpPort
         #udpPort = udp_ports['master']
         tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        tcp.connect((HOST, PORT))
-        tcp.sendall(b"readyip"+(ip))
+        tcp.connect((opponent, PORT))
+        tcp.sendall(b"readyip")
         data = tcp.recv(1024)
         if data.split(b'ip')[0] == b'g2g':
-            opponent = data.split(b'ip')[1].decode('utf-8')
+            # opponent = data.split(b'ip')[1].decode('utf-8')
             print("Ready for Netlink!")
             print('Opponent IP: %s'% opponent)
             ts = tcp.recv(1024)

@@ -122,6 +122,7 @@ def printer():
     global com_port
     global state
     first_run = True
+    check = 0
     print("I'm the printer")
     while(state == "connected"):
         try:
@@ -129,6 +130,9 @@ def printer():
             if jitterBuff == True:
                 time.sleep(0.01)
             ts = read['ts']
+            if ts < check:
+                continue
+            check = ts
             toSend = read['data']
             if first_run == True:
                 # time.sleep(jitterBuff)
