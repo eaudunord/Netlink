@@ -13,6 +13,9 @@ if __name__ == "__main__":
     from modemClass import Modem
     com_port = sys.argv[1]
     device_and_speed = [com_port,57600]
+    import logging
+    logging.basicConfig(level=logging.DEBUG)
+    logger = logging.getLogger('dreampi')
     # opponent = socket.gethostbyname(socket.gethostname())
 import struct
 import threading
@@ -20,7 +23,7 @@ import threading
 side = ""
 
 
-data = []
+# data = []
 HOST = socket.gethostbyname(socket.gethostname())
 
 
@@ -39,7 +42,7 @@ def initConnection(ms):
     global opponent
     global start
     if ms == "slave":
-        print("I'm slave")
+        logger.info("I'm slave")
         PORT = 65432
         tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         tcp.bind((HOST, PORT))
@@ -50,10 +53,10 @@ def initConnection(ms):
             data = conn.recv(1024)
             if data.split(b'ip')[0] == b'ready':
                 conn.sendall(b'g2gip')
-                print("Sending Ring")
+                logger.info("Sending Ring")
                 ser.write("RING\r\n")
                 ser.write("CONNECT\r\n")
-                print("Ready for Netlink!")
+                logger.info("Ready for Netlink!")
                 ts = time.time()
                 start = ts + 0.3 
                 conn.sendall(struct.pack('d',ts))
@@ -61,7 +64,7 @@ def initConnection(ms):
             if not data:
                 break
     if ms == "master":
-        print("I'm master")
+        logger.info("I'm master")
         PORT = 65432
         tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         tcp.connect((opponent, PORT))
@@ -69,8 +72,8 @@ def initConnection(ms):
         data = tcp.recv(1024)
         if data.split(b'ip')[0] == b'g2g':
             # opponent = data.split(b'ip')[1].decode('utf-8')
-            print("Ready for Netlink!")
-            # print('Opponent IP: %s'% opponent)
+            logger.info("Ready for Netlink!")
+            # logger.info('Opponent IP: %s'% opponent)
             ts = tcp.recv(1024)
             st = struct.unpack('d',ts)[0]
             delay = st+0.2-time.time()
@@ -83,6 +86,7 @@ def initConnection(ms):
 
 
 def listener():
+    data = []
     while(state == "connected"):
         try:
             packet = udp.recvfrom(1024)
@@ -92,15 +96,15 @@ def listener():
             sequence = struct.unpack('d',raw_sequence)[0]
             data.append({'ts':sequence,'data':payload})
             if len(payload) > 0:
-                print(payload)
+                logger.info(payload)
         except KeyboardInterrupt:
-            print("Error thread 1")
+            logger.info("Error thread 1")
             sys.exit()
                 
 def printer():
     global com_port
     global state
-    print("I'm the printer")
+    logger.info("I'm the printer")
     while(state == "connected"):
         try:
             read = data.pop(0)
@@ -108,15 +112,15 @@ def printer():
             toSend = read['data']
             latency = round(((time.time() - ts)*1000),0)
             if len(toSend) >0:
-                print('latency: %sms' % latency)
-                print(toSend)
+                logger.info('latency: %sms' % latency)
+                logger.info(toSend)
             ser.write(toSend)
         except:
             continue
             
 def sender():
     global state
-    print("sending")
+    logger.info("sending")
     first_run = True
     if side == "slave":
         oppPort = 20002
@@ -160,6 +164,7 @@ def netlink_process():
         now = datetime.now()
 
         if mode == "LISTENING":
+            global char
             modem.update()
             char = modem._serial.read(1).strip()
             if not char:
@@ -170,7 +175,7 @@ def netlink_process():
                 try:
                     char = modem._serial.read(1)
                     digit = int(char)
-                    print("Heard: %s" % digit)
+                    logger.info("Heard: %s" % digit)
 
                     mode = "ANSWERING"
                     modem.stop_dial_tone()
@@ -183,7 +188,7 @@ def netlink_process():
                 ts = time.time()
                 modem.answer()
                 time_to_answer = time.time() - ts
-                print('Time to answer: %s' % time_to_answer)
+                logger.info('Time to answer: %s' % time_to_answer)
                 ts = time.time()
                 modem.disconnect()
                 mode = "CONNECTED"
@@ -197,10 +202,24 @@ def netlink_process():
             if digit == 7:
                 side = "master"
                 return
-            
+
+def digit_parser(char,modem):
+    if ord(char) == 16:
+            # DLE character
+            try:
+                char = modem._serial.read(1)
+                digit = int(char)
+                logger.info("Heard: %s", digit)
+
+                mode = "ANSWERING"
+                modem.stop_dial_tone()
+                time_digit_heard = now
+            except (TypeError, ValueError):
+                pass
+
 if __name__ == "__main__":
     netlink_process()
-    print("process says I'm %s" % side)              
+    logger.info("process says I'm %s" % side)              
 
 
 def netlink_exchange():

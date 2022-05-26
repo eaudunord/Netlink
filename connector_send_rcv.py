@@ -6,15 +6,19 @@ Created on Thu May 19 08:01:31 2022
 """
 
 import socket
-from ports_def import tcp_ports
-from ports_def import udp_ports
+# from ports_def import tcp_ports
+# from ports_def import udp_ports
 import sys
 import requests
 import struct
 import time
 import threading
 import random
+import logging
 
+logging.basicConfig(level=logging.DEBUG)
+
+logger = logging.getLogger('dreampi')
 side = ""
 try:
     side = sys.argv[1]
@@ -30,8 +34,8 @@ except:
 
 HOST = "127.0.0.1"
 data = []
-tcpPort = tcp_ports['slave']
-udpPort = udp_ports[side]
+tcpPort = 65432
+# udpPort = udp_ports[side]
 #PORT = 65432  # Port to listen on (non-privileged ports are > 1023)
 state = "disconnected"
 jitterBuff = 0.01
@@ -40,17 +44,18 @@ udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 sync_delay = 0
 start = 0
+opponent = "127.0.0.1"
 
 # with socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM) as udp:
 #     udp.bind((HOST, udpPort))
 
-def initConnection(ms, opponent = "127.0.0.1"):
-    
-    global udpPort
-    global start
+def initConnection(ms=side,opponent=opponent,start=start):
+    # global opponent
+    # # global udpPort
+    # global start
     if ms == "slave":
-        print("I'm slave")
-        PORT = tcpPort
+        logger.info("I'm slave")
+        PORT = 65432
         #udpPort = udp_ports['slave']
         tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         tcp.bind((HOST, PORT))
@@ -71,7 +76,7 @@ def initConnection(ms, opponent = "127.0.0.1"):
                 break
     if ms == "master":
         print("I'm master")
-        PORT = tcpPort
+        PORT = 65432
         #udpPort = udp_ports['master']
         tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         tcp.connect((opponent, PORT))
@@ -136,9 +141,9 @@ def printer():
 def sender():
     print("sending")
     if side == "slave":
-        oppPort = udp_ports['master']
+        oppPort = 20001
     if side == 'master':
-        oppPort = udp_ports['slave']
+        oppPort = 20002
     while(state == "connected"):
         raw_input = side
         # delimiter = str.encode("sequenceno",'ANSI')
@@ -147,7 +152,7 @@ def sender():
             # payload = str.encode(raw_input,'ANSI')
             payload = raw_input
             ts = time.time()
-            udp.sendto((payload+delimiter+struct.pack('d',ts)), (HOST,oppPort))
+            udp.sendto((payload+delimiter+struct.pack('d',ts)), (opponent,oppPort))
             
             time.sleep(rate)
             #raw_input = input(">> ")
@@ -170,7 +175,12 @@ sync_delay = start-time.time()
 # time.sleep(sync_delay) 
                 
 if state == "connected":
-    udp.bind((HOST, udpPort))
+    if side == "slave":
+        Port = 20002
+    if side == 'master':
+        Port = 20001
+
+    udp.bind((HOST, Port))
     t1.start()
     t2.start()
     t3.start()
