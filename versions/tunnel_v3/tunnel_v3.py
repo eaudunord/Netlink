@@ -99,14 +99,14 @@ def netlink_listener():
         elif mode == "CONNECTED":
             
             if client == "direct_dial":
-                netlink_process(side=side,dial_string=dial_string)
+                netlink_process(side=side,dial_string=dial_string,device_and_speed=device_and_speed)
                 mode = "LISTENING"
                 modem = Modem(device_and_speed[0], device_and_speed[1], dial_tone_enabled)
                 modem.connect()
                 if dial_tone_enabled:
                     modem.start_dial_tone()
 
-def netlink_process(side="",dial_string=""):
+def netlink_process(side="",dial_string="",device_and_speed=""):
     HOST = socket.gethostbyname(socket.gethostname())
     poll_rate = 0.02
     state = "netlink_disconnected"
@@ -114,7 +114,7 @@ def netlink_process(side="",dial_string=""):
     if side == 'master':
         opponent = dial_string.replace('*','.')
 
-    def initConnection(ms):
+    def initConnection(ms,ser):
         if ms == "slave":
             logger.info("I'm slave")
             PORT = 65432
@@ -157,7 +157,7 @@ def netlink_process(side="",dial_string=""):
         else:
             return "error"
     def listener(udp):
-        
+        check = 0.00
         while(state == "connected"):
             try:
                 packet = udp.recvfrom(1024)
@@ -165,6 +165,9 @@ def netlink_process(side="",dial_string=""):
                 payload = message.split(b'sequenceno')[0]
                 raw_sequence = message.split(b'sequenceno')[1]
                 sequence = struct.unpack('d',raw_sequence)[0]
+                if sequence < check:
+                    continue
+                check = sequence
                 data.append({'ts':sequence,'data':payload})
                 if len(payload) > 0:
                     logger.info(payload)
@@ -185,7 +188,7 @@ def netlink_process(side="",dial_string=""):
                 ser.write(toSend)
             except:
                 continue
-    def sender(ser):
+    def sender(ser,udp):
         logger.info("sending")
         first_run = True
         if side == "slave":
@@ -208,9 +211,9 @@ def netlink_process(side="",dial_string=""):
             except KeyboardInterrupt:
                 sys.exit()
 
-    def netlink_exchange():
+    def netlink_exchange(device_and_speed):
         ser = serial.Serial(com_port, device_and_speed[1], timeout=poll_rate)
-        state = initConnection(side)
+        state = initConnection(side,ser)
         time.sleep(0.2) 
                         
         if state == "connected":
@@ -222,12 +225,12 @@ def netlink_process(side="",dial_string=""):
             udp.bind((HOST, Port))
             t1 = threading.Thread(target=listener,args=(udp))
             t2 = threading.Thread(target=printer, args=(ser))
-            t3 = threading.Thread(target=sender, args=(ser))
+            t3 = threading.Thread(target=sender, args=(ser,udp))
             t1.start()
             t2.start()
             t3.start()
     
-    netlink_exchange()
+    netlink_exchange(device_and_speed)
 
 if __name__ == "__main__":
     netlink_listener()
