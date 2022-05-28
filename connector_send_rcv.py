@@ -71,6 +71,7 @@ def initConnection(ms=side,opponent=opponent,start=start):
                 ts = time.time()
                 start = ts + 0.2 
                 conn.sendall(struct.pack('d',ts))
+                tcp.close()
                 return "connected"
             if not data:
                 break
@@ -90,6 +91,7 @@ def initConnection(ms=side,opponent=opponent,start=start):
             st = struct.unpack('d',ts)[0]
             delay = st+0.2-time.time()
             start = delay + time.time()
+            tcp.close()
             return "connected"
                 
     else:
