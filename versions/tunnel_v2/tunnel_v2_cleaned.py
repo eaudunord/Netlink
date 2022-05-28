@@ -23,13 +23,19 @@ import threading
 side = ""
 
 
-# data = []
+data = []
 HOST = socket.gethostbyname(socket.gethostname())
 
 
 state = "netlink_disconnected"
-jitterBuff = 0.0
-poll_rate = 0.02
+jitterBuff = False
+try:
+    if jitterBuff in sys.argv:
+        jitterBuff = True
+        logger.info("Jitter Buffer On")
+except:
+    pass
+poll_rate = 0.01
 sync_delay = 0
 start = 0
 try:
@@ -86,7 +92,7 @@ def initConnection(ms):
 
 
 def listener():
-    data = []
+    first_run = True
     while(state == "connected"):
         try:
             packet = udp.recvfrom(1024)
@@ -104,16 +110,18 @@ def listener():
 def printer():
     global com_port
     global state
+    first_run = True
     logger.info("I'm the printer")
     while(state == "connected"):
         try:
             read = data.pop(0)
+
             ts = read['ts']
             toSend = read['data']
-            latency = round(((time.time() - ts)*1000),0)
-            if len(toSend) >0:
-                logger.info('latency: %sms' % latency)
-                logger.info(toSend)
+            # latency = round(((time.time() - ts)*1000),0)
+            # if len(toSend) >0:
+                # logger.info('latency: %sms' % latency)
+                # logger.info(toSend)
             ser.write(toSend)
         except:
             continue
@@ -131,6 +139,10 @@ def sender():
             ser.read(1024)
             first_run = False
         raw_input = ser.read(1024)
+        # if len(raw_input) == 0:
+        #     logger.info("no data")
+        # if not raw_input:
+        #     logger.info("data no")
         if "NO CARRIER" in raw_input:
             state = "netlink_disconnected"
             break
@@ -139,8 +151,8 @@ def sender():
             payload = raw_input
             ts = time.time()
             udp.sendto((payload+delimiter+struct.pack('d',ts)), (opponent,oppPort))
-        except KeyboardInterrupt:
-            sys.exit()
+        except:
+            continue
             
 def netlink_process():
     #This is nearly identical to the dreampi connection script except for mode == "CONNECTED"
@@ -203,19 +215,19 @@ def netlink_process():
                 side = "master"
                 return
 
-def digit_parser(char,modem):
-    if ord(char) == 16:
-            # DLE character
-            try:
-                char = modem._serial.read(1)
-                digit = int(char)
-                logger.info("Heard: %s", digit)
+# def digit_parser(char,modem):
+#     if ord(char) == 16:
+#             # DLE character
+#             try:
+#                 char = modem._serial.read(1)
+#                 digit = int(char)
+#                 logger.info("Heard: %s", digit)
 
-                mode = "ANSWERING"
-                modem.stop_dial_tone()
-                time_digit_heard = now
-            except (TypeError, ValueError):
-                pass
+#                 mode = "ANSWERING"
+#                 modem.stop_dial_tone()
+#                 time_digit_heard = now
+#             except (TypeError, ValueError):
+#                 pass
 
 if __name__ == "__main__":
     netlink_process()
