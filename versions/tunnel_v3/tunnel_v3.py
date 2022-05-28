@@ -42,6 +42,7 @@ def digit_parser(modem):
                 try:
                     char = modem._serial.read(1)
                     if char == '#':
+                        dial_string = dial_string.replace('*','.')
                         break
                     if char in ip_digits:
                         dial_string += char
@@ -118,10 +119,10 @@ def netlink_process(side="",dial_string="",device_and_speed=""):
     poll_rate = 0.02
     state = "netlink_disconnected"
     data = []
-    if side == 'master':
-        opponent = dial_string.replace('*','.')
+    global opponent
 
     def initConnection(ms,ser):
+        global opponent
         if ms == "slave":
             logger.info("I'm slave")
             PORT = 65432
@@ -145,6 +146,7 @@ def netlink_process(side="",dial_string="",device_and_speed=""):
                 if not data:
                     break
         if ms == "master":
+            opponent = dial_string
             logger.info("I'm master")
             PORT = 65432
             tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
