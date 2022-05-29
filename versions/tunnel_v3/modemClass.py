@@ -3,7 +3,7 @@ import serial
 from datetime import datetime
 from datetime import timedelta
 import time
-device_and_speed = ['COM6',14400]
+
 
 class Modem(object):
     def __init__(self, device, speed, send_dial_tone=True):
@@ -45,9 +45,17 @@ class Modem(object):
         self._serial = serial.Serial(
             self._device, self._speed, timeout=0
         )
+    def connect_netlink(self):
+        if self._serial:
+            self.disconnect()
+        print("Opening netlink serial interface to {}".format(self._device))
+        self._serial = serial.Serial(
+            self._device, self._speed, timeout=0.01
+        )
 
     def disconnect(self):
         if self._serial and self._serial.isOpen():
+            self._serial.flush() #added a flush, is data hanging on in the buffer?
             self._serial.close()
             self._serial = None
             print("Serial interface terminated")
