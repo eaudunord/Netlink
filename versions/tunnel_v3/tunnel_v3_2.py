@@ -9,12 +9,12 @@ import serial
 
 logger = logging.getLogger('dreampi')
 com_port = sys.argv[1]
-device_and_speed = [com_port,57600]
+device_and_speed = [com_port,115200]
 modem = Modem(device_and_speed[0], device_and_speed[1])
 
 
 def do_netlink(side,dial_string):
-    ser = serial.Serial(device_and_speed[0], device_and_speed[1], timeout=0.01)
+    ser = serial.Serial(device_and_speed[0], device_and_speed[1], timeout=0.005)
     state, opponent  = netlink.netlink_setup(device_and_speed,side,dial_string,ser)
     state = netlink.netlink_exchange(side,state,opponent)
     return state
