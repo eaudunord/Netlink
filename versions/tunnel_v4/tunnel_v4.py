@@ -14,8 +14,8 @@ modem = Modem(device_and_speed[0], device_and_speed[1])
 
 
 def do_netlink(side,dial_string):
-    ser = serial.Serial(device_and_speed[0], device_and_speed[1], timeout=0.005)
-    state, opponent  = netlink.netlink_setup(device_and_speed,side,dial_string,ser)
+    # ser = serial.Serial(device_and_speed[0], device_and_speed[1], timeout=0.02)
+    state, opponent  = netlink.netlink_setup(device_and_speed,side,dial_string)
     netlink.netlink_exchange(side,state,opponent)
 
 

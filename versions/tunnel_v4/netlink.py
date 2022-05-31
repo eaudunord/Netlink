@@ -109,14 +109,25 @@ def initConnection(ms,dial_string):
 
 
 
-def listener():
-    print(state)
-    while(state != "netlink_disconnected"):
-        ready = select.select([udp], [], [],0)
-        if ready[0]:
-            try:
+
+            
+
+         
+
+
+def netlink_setup(device_and_speed,side,dial_string):
+    global ser
+    ser = serial.Serial(device_and_speed[0], device_and_speed[1], timeout=0.02)
+    state = initConnection(side,dial_string)
+    time.sleep(0.2)
+    return state
+
+def netlink_exchange(side,net_state,opponent):
+    def listener():
+        print(state)
+        while(state != "netlink_disconnected"):
+            if ready[0]:
                 packet = udp.recv(1024)
-                logger.info("udp recvd")
                 message = packet
                 payload = message.split(b'sequenceno')[0]
                 raw_sequence = message.split(b'sequenceno')[1]
@@ -124,75 +135,60 @@ def listener():
                 data.append({'ts':sequence,'data':payload})
                 if len(payload) > 0 and printout == True:
                     logger.info(binascii.hexlify(payload))
-            except:
-                logger.info("listen exception")
-                continue
-    logger.info("listener stopped")
+                    
+        logger.info("listener stopped")
                 
-def printer():
-    global state
-    first_run = True
-    logger.info("receiving")
-    while(state != "netlink_disconnected"):
-        try:
-            read = data.pop(0)
+    def printer():
+        global state
+        # first_run = True
+        logger.info("receiving")
+        while(state != "netlink_disconnected"):
+            try:
+                read = data.pop(0)
 
-            ts = read['ts']
-            toSend = read['data']
-            # latency = round(((time.time() - ts)*1000),0)
-            # if len(toSend) >0:
-                # logger.info('latency: %sms' % latency)
-                # logger.info(toSend)
-            ser.write(toSend)
-        except IndexError:
-            continue
-    logger.info("printer stopped")
-    return
-            
-def sender(side,opponent):
-    global state
-    logger.info("sending")
-    first_run = True
-    if side == "slave":
-        oppPort = 20002
-    if side == 'master':
-        oppPort = 20001
-    while(state != "netlink_disconnected"):
-        if first_run == True:
-            raw_input = ser.read(1024)
-            first_run = False
-        raw_input = ser.read(1024)
-        if "NO CARRIER" in raw_input:
-            logger.info("detected hangup")
-            state = "netlink_disconnected"
-            udp.close()
-            ser.close()
-            logger.info("sender stopped")
-            return
-        delimiter = "sequenceno"
-        try:
-            payload = raw_input
-            ts = time.time()
-            udp.sendto((payload+delimiter+struct.pack('d',ts)), (opponent,oppPort))
-        except:
-            logger.info("sender exception")
-            continue
-            
-
-         
-
-
-def netlink_setup(device_and_speed,side,dial_string,ser_port):
-    global ser
-    ser = ser_port
-    state = initConnection(side,dial_string)
-    time.sleep(0.2)
-    return state
-
-def netlink_exchange(side,net_state,opponent):
-    # global ser
-    # ser = serial.Serial(device_and_speed[0], device_and_speed[1], timeout=0.005)
-    global udp 
+                ts = read['ts']
+                toSend = read['data']
+                # latency = round(((time.time() - ts)*1000),0)
+                # if len(toSend) >0:
+                    # logger.info('latency: %sms' % latency)
+                    # logger.info(toSend)
+                ser.write(toSend)
+            except IndexError:
+                continue
+        logger.info("printer stopped")
+        return
+                
+    def sender(side,opponent):
+        global state
+        logger.info("sending")
+        first_run = True
+        if side == "slave":
+            oppPort = 20002
+        if side == 'master':
+            oppPort = 20001
+        while(state != "netlink_disconnected"):
+            if ser.in_waiting > 0:
+                if first_run == True:
+                    raw_input = ser.read(1024)
+                    first_run = False
+                raw_input = ser.read(1024)
+                if "NO CARRIER" in raw_input:
+                    logger.info("detected hangup")
+                    state = "netlink_disconnected"
+                    udp.close()
+                    ser.flush()
+                    ser.close()
+                    logger.info("sender stopped")
+                    return
+                delimiter = "sequenceno"
+                try:
+                    payload = raw_input
+                    ts = time.time()
+                    udp.sendto((payload+delimiter+struct.pack('d',ts)), (opponent,oppPort))
+                except:
+                    logger.info("sender exception")
+                    continue
+    # global udp 
     global state 
     state = net_state              
     if state == "connected":
@@ -206,6 +202,7 @@ def netlink_exchange(side,net_state,opponent):
         udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         udp.setblocking(0)
         udp.bind((HOST, Port))
+        ready = select.select([udp],[udp],[])
         t1.start()
         t2.start()
         t3.start()
