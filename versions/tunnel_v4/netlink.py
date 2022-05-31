@@ -117,7 +117,7 @@ def initConnection(ms,dial_string):
 
 def netlink_setup(device_and_speed,side,dial_string):
     global ser
-    ser = serial.Serial(device_and_speed[0], device_and_speed[1], timeout=0.02)
+    ser = serial.Serial(device_and_speed[0], device_and_speed[1], timeout=0.01)
     state = initConnection(side,dial_string)
     time.sleep(0.2)
     return state
@@ -126,6 +126,7 @@ def netlink_exchange(side,net_state,opponent):
     def listener():
         print(state)
         while(state != "netlink_disconnected"):
+            ready = select.select([udp],[udp],[])
             if ready[0]:
                 packet = udp.recv(1024)
                 message = packet
@@ -202,7 +203,7 @@ def netlink_exchange(side,net_state,opponent):
         udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         udp.setblocking(0)
         udp.bind((HOST, Port))
-        ready = select.select([udp],[udp],[])
+        
         t1.start()
         t2.start()
         t3.start()
