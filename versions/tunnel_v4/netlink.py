@@ -116,6 +116,7 @@ def listener():
         if ready[0]:
             try:
                 packet = udp.recv(1024)
+                logger.info("udp recvd")
                 message = packet
                 payload = message.split(b'sequenceno')[0]
                 raw_sequence = message.split(b'sequenceno')[1]
@@ -175,6 +176,7 @@ def sender(side,opponent):
             udp.sendto((payload+delimiter+struct.pack('d',ts)), (opponent,oppPort))
         except:
             logger.info("sender exception")
+            continue
             
 
          
