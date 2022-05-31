@@ -24,6 +24,12 @@ import select
 printout = False
 if 'printout' in sys.argv:
     printout = True
+timeout = 0.01
+try:
+    timeout = float(sys.argv[2])
+except:
+    pass
+logger.info('serial timeout: %s' % timeout)
 
 # side = ""
 data = []
@@ -117,7 +123,7 @@ def initConnection(ms,dial_string):
 
 def netlink_setup(device_and_speed,side,dial_string):
     global ser
-    ser = serial.Serial(device_and_speed[0], device_and_speed[1], timeout=0.01)
+    ser = serial.Serial(device_and_speed[0], device_and_speed[1], timeout=timeout)
     state = initConnection(side,dial_string)
     time.sleep(0.2)
     return state
