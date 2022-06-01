@@ -33,7 +33,6 @@ logger.info('serial timeout: %s' % timeout)
 
 # side = ""
 data = []
-HOST = socket.gethostbyname(socket.gethostname())
 state = "starting"
 poll_rate = 0.01
 ser = ""
@@ -76,7 +75,7 @@ def initConnection(ms,dial_string):
         PORT = 65432
         tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         tcp.settimeout(120)
-        tcp.bind((HOST, PORT))
+        tcp.bind(('', PORT))
         tcp.listen(5)
         ready = select.select([tcp], [], [])
         if ready[0]:
@@ -193,7 +192,6 @@ def netlink_exchange(side,net_state,opponent):
                     ts = time.time()
                     udp.sendto((payload+delimiter+struct.pack('d',ts)), (opponent,oppPort))
                 except:
-                    logger.info("sender exception")
                     continue
     # global udp 
     global state 
@@ -208,7 +206,7 @@ def netlink_exchange(side,net_state,opponent):
             Port = 20002
         udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         udp.setblocking(0)
-        udp.bind((HOST, Port))
+        udp.bind(('', Port))
         
         t1.start()
         t2.start()
