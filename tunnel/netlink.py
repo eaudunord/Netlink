@@ -132,7 +132,7 @@ def netlink_exchange(side,net_state,opponent):
         print(state)
         last = 0
         while(state != "netlink_disconnected"):
-            ready = select.select([udp],[],[])
+            ready = select.select([udp],[],[],0.05)
             if ready[0]:
                 packet = udp.recv(1024)
                 now = time.time()
@@ -146,8 +146,20 @@ def netlink_exchange(side,net_state,opponent):
                 data.append({'ts':sequence,'data':payload})
                 if len(payload) > 0 and printout == True:
                     logger.info(binascii.hexlify(payload))
+        #         try:
+        #             read = data.pop(0)
+
+        #             ts = read['ts']
+        #             toSend = read['data']
+        #             # latency = round(((time.time() - ts)*1000),0)
+        #             # if len(toSend) >0:
+        #                 # logger.info('latency: %sms' % latency)
+        #                 # logger.info(toSend)
+        #             ser.write(toSend)
+        #         except IndexError:
+        #             continue
                     
-        logger.info("listener stopped")
+        # logger.info("listener stopped")
                 
     def printer():
         global state
@@ -179,7 +191,7 @@ def netlink_exchange(side,net_state,opponent):
             oppPort = 20001
         while(state != "netlink_disconnected"):
             if ser.in_waiting > 0:
-                logger.info("%s bytes waiting to be read" % ser.in_waiting)
+                # logger.info("%s bytes waiting to be read" % ser.in_waiting)
                 if first_run == True:
                     raw_input = ser.read(1024)
                     first_run = False
