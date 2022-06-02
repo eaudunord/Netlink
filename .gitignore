@@ -4,3 +4,5 @@ __pycache__/
 *.bat
 dreampi.py
 releases/
+versions/
+tunnel/errors_dumps/
