@@ -113,31 +113,17 @@ def initConnection(ms,dial_string):
     else:
         return ["error","error"]
 
-
-
-
-            
-
-         
-
-
-def netlink_setup(device_and_speed,side,dial_string):
-    global ser
-    ser = serial.Serial(device_and_speed[0], device_and_speed[1], timeout=timeout)
-    state = initConnection(side,dial_string)
-    time.sleep(0.2)
-    return state
-
-def netlink_exchange(side,net_state,opponent):
-    
-    def listener(udp,ser,listen_pipe):
+def listener(Port,ser,listen_pipe):
+        udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        udp.setblocking(0)
+        udp.bind(('', Port))
         state = "connected"
         last = 0
         while(state != "netlink_disconnected"):
-            try:
-                state = listen_pipe.recv()
-            except:
-                pass
+            # try:
+            #     state = listen_pipe.recv()
+            # except:
+            #     pass
             ready = select.select([udp],[],[])
             if ready[0]:
                 packet = udp.recv(1024)
@@ -167,28 +153,8 @@ def netlink_exchange(side,net_state,opponent):
                     
         logger.info("listener stopped")
 
-    # #combined this function with listener            
-    # def printer():
-    #     global state
-    #     # first_run = True
-    #     logger.info("receiving")
-    #     while(state != "netlink_disconnected"):
-    #         try:
-    #             read = data.pop(0)
-
-    #             ts = read['ts']
-    #             toSend = read['data']
-    #             # latency = round(((time.time() - ts)*1000),0)
-    #             # if len(toSend) >0:
-    #                 # logger.info('latency: %sms' % latency)
-    #                 # logger.info(toSend)
-    #             ser.write(toSend)
-    #         except IndexError:
-    #             continue
-    #     logger.info("printer stopped")
-    #     return
-                
-    def sender(udp,side,opponent,ser,send_pipe):
+def sender(side,opponent,ser,send_pipe):
+        udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         state = "connected"
         logger.info("sending")
         first_run = True
@@ -222,8 +188,18 @@ def netlink_exchange(side,net_state,opponent):
                     udp.sendto((payload+delimiter+struct.pack('d',ts)), (opponent,oppPort))
                 except:
                     continue
-   
-    global state 
+            
+
+
+def netlink_setup(device_and_speed,side,dial_string):
+    global ser
+    ser = serial.Serial(device_and_speed[0], device_and_speed[1], timeout=timeout)
+    state = initConnection(side,dial_string)
+    time.sleep(0.2)
+    return state
+
+def netlink_exchange(side,net_state,opponent):
+    
     state = net_state              
     if state == "connected":
 
@@ -232,26 +208,15 @@ def netlink_exchange(side,net_state,opponent):
             Port = 20001
         if side == 'master':
             Port = 20002
-        udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        udp.setblocking(0)
-        udp.bind(('', Port))
 
-        # # threaded
-        # t1 = threading.Thread(target=listener)
-        # # t2 = threading.Thread(target=printer)
-        # t3 = threading.Thread(target=sender,args=(side,opponent))
-
-        # multiprocessing
-        t1 = Process(target=listener, args=(udp,ser,listen_pipe))
-        t3 = Process(target=sender, args=(udp,side,opponent,ser,send_pipe))
+        p1 = Process(target=listener, args=(Port,ser,listen_pipe))
+        p2 = Process(target=sender, args=(side,opponent,ser,send_pipe))
         
         
-        t1.start()
-        t1.join()
-        # t2.start()
-        t3.start()
-        # t2.join()
-        t3.join()
+        p1.start()
+        p1.join()
+        p2.start()
+        p2.join()
 
         
 
