@@ -4,7 +4,7 @@ import sys
 from datetime import datetime
 import logging
 import time
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 import serial
 
 logger = logging.getLogger('dreampi')

@@ -4,6 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
+from errno import EBADF
 import sys
 
 if __name__ == "__main__":
@@ -15,22 +16,21 @@ import time
 import serial
 from datetime import datetime
 import logging
-logging.basicConfig(level=logging.DEBUG)
+# logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('dreampi')
 import struct
 import threading
 import binascii
 import select
-from multiprocessing import Process, Pipe
 printout = False
 if 'printout' in sys.argv:
     printout = True
-timeout = 0.01
+timeout = 0.0003
 try:
     timeout = float(sys.argv[2])
 except:
     pass
-logger.info('serial timeout: %s' % timeout)
+# logger.info('serial timeout: %s' % timeout)
 
 # side = ""
 data = []
@@ -113,29 +113,39 @@ def initConnection(ms,dial_string):
     else:
         return ["error","error"]
 
-def listener(Port,ser,listen_pipe):
-        udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        udp.setblocking(0)
-        udp.bind(('', Port))
-        state = "connected"
+
+
+
+            
+
+         
+
+
+def netlink_setup(device_and_speed,side,dial_string):
+    global ser
+    ser = serial.Serial(device_and_speed[0], device_and_speed[1], timeout=timeout)
+    state = initConnection(side,dial_string)
+    time.sleep(0.2)
+    return state
+
+def netlink_exchange(side,net_state,opponent):
+    def listener():
+        print(state)
         last = 0
         while(state != "netlink_disconnected"):
-            # try:
-            #     state = listen_pipe.recv()
-            # except:
-            #     pass
-            ready = select.select([udp],[],[])
+            ready = select.select([udp],[],[],0.003)
             if ready[0]:
+                
                 packet = udp.recv(1024)
-                now = time.time()
-                t_delta = round(((now - last)*1000),0)
-                logger.info("Arrival Spacing: %s" % t_delta)
-                last = now
+                # now = time.time()
+                # t_delta = round(((now - last)*1000),0)
+                # logger.info("Arrival Spacing: %s" % t_delta)
+                # last = now
                 message = packet
                 payload = message.split(b'sequenceno')[0]
-                raw_sequence = message.split(b'sequenceno')[1]
-                sequence = struct.unpack('d',raw_sequence)[0]
+                sequence = float(message.split(b'sequenceno')[1])
                 data.append({'ts':sequence,'data':payload})
+                
                 if len(payload) > 0 and printout == True:
                     logger.info(binascii.hexlify(payload))
                 try:
@@ -152,30 +162,56 @@ def listener(Port,ser,listen_pipe):
                     continue
                     
         logger.info("listener stopped")
+                
+    # def printer():
+    #     global state
+    #     # first_run = True
+    #     logger.info("receiving")
+    #     while(state != "netlink_disconnected"):
+    #         try:
+    #             read = data.pop(0)
 
-def sender(side,opponent,ser,send_pipe):
-        udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        state = "connected"
+    #             ts = read['ts']
+    #             toSend = read['data']
+    #             # latency = round(((time.time() - ts)*1000),0)
+    #             # if len(toSend) >0:
+    #                 # logger.info('latency: %sms' % latency)
+    #                 # logger.info(toSend)
+    #             ser.write(toSend)
+    #         except IndexError:
+    #             continue
+    #     logger.info("printer stopped")
+    #     return
+                
+    def sender(side,opponent):
+        global state
         logger.info("sending")
         first_run = True
         if side == "slave":
             oppPort = 20002
-        if side == "master":
+        if side == 'master':
             oppPort = 20001
         last = 0
         while(state != "netlink_disconnected"):
             if ser.in_waiting > 0:
-                now = time.time()
-                t_delta = round(((now - last)*1000),0)
+                # now = time.time()
+                # t_delta = round(((now - last)*1000),0)
                 # logger.info("Serial Spacing: %s" % t_delta)
+                # last = now
+            # logger.info("%s bytes waiting to be read" % ser.in_waiting)
                 if first_run == True:
                     raw_input = ser.read(1024)
                     first_run = False
-                raw_input = ser.read(1024)
+                    raw_input = ser.read(14)
+                # elif ser.in_waiting == 1:
+                #     raw_input = ser.read(1)
+                #     # logger.info('possible sync')
+                else:
+                    raw_input = ser.read(ser.in_waiting)
                 if "NO CARRIER" in raw_input:
                     logger.info("detected hangup")
-                    send_pipe.send("netlink_disconnected")
                     state = "netlink_disconnected"
+                    time.sleep(1)
                     udp.close()
                     ser.flush()
                     ser.close()
@@ -184,40 +220,32 @@ def sender(side,opponent,ser,send_pipe):
                 delimiter = "sequenceno"
                 try:
                     payload = raw_input
-                    ts = time.time()
-                    udp.sendto((payload+delimiter+struct.pack('d',ts)), (opponent,oppPort))
+                    ts = str(time.time())
+                    if len(payload)>0:
+                        udp.sendto((payload+delimiter+ts), (opponent,oppPort))
                 except:
                     continue
-            
-
-
-def netlink_setup(device_and_speed,side,dial_string):
-    global ser
-    ser = serial.Serial(device_and_speed[0], device_and_speed[1], timeout=timeout)
-    state = initConnection(side,dial_string)
-    time.sleep(0.2)
-    return state
-
-def netlink_exchange(side,net_state,opponent):
-    
+    # global udp 
+    global state 
     state = net_state              
     if state == "connected":
-
-        listen_pipe, send_pipe = Pipe()
+        t1 = threading.Thread(target=listener)
+        # t2 = threading.Thread(target=printer)
+        t3 = threading.Thread(target=sender,args=(side,opponent))
         if side == "slave":
             Port = 20001
         if side == 'master':
             Port = 20002
-
-        p1 = Process(target=listener, args=(Port,ser,listen_pipe))
-        p2 = Process(target=sender, args=(side,opponent,ser,send_pipe))
+        udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        udp.setblocking(0)
+        udp.bind(('', Port))
         
-        
-        p1.start()
-        p1.join()
-        p2.start()
-        p2.join()
-
+        t1.start()
+        # t2.start()
+        t3.start()
+        t1.join()
+        # t2.join()
+        t3.join()
         
 
 
