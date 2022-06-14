@@ -84,7 +84,11 @@ def initConnection(ms,dial_string):
             opponent = addr[0]
             logger.info('connection from %s' % opponent)
             while True:
-                data = conn.recv(1024)
+                try:
+                    data = conn.recv(1024)
+                except socket.error, (value,message):
+                    if value == 10035:
+                        continue
                 if data.split(b'ip')[0] == b'ready':
                     conn.sendall(b'g2gip')
                     logger.info("Sending Ring")
