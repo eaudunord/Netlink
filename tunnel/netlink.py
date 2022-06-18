@@ -22,10 +22,13 @@ import struct
 import threading
 import binascii
 import select
+
+packetSplit = "<packetSplit>"
+dataSplit = "<dataSplit>"
 printout = False
 if 'printout' in sys.argv:
     printout = True
-timeout = 0.0003
+timeout = 0.003
 try:
     timeout = float(sys.argv[2])
 except:
@@ -144,38 +147,86 @@ def netlink_exchange(side,net_state,opponent):
     def listener():
         print(state)
         last = 0
-        last_sequence = 0.0
+        currentSequence = 0
+        # f = open("recv-output.txt", "a")
+        # f.write("New output")
+        # f.write("\n")
+        # ts = round(time.time() * 10000)
+        # lastTime = round(time.time() * 10000) - ts
         while(state != "netlink_disconnected"):
             ready = select.select([udp],[],[],0.003)
             if ready[0]:
                 
-                packet = udp.recv(1024)
-                # now = time.time()
-                # t_delta = round(((now - last)*1000),0)
-                # logger.info("Arrival Spacing: %s" % t_delta)
-                # last = now
-                message = packet
-                payload = message.split(b'sequenceno')[0]
-                sequence = float(message.split(b'sequenceno')[1])
-                if sequence > last_sequence: #make sure we are dealing with new data
-                    last_sequence = sequence
-                    data.append({'ts':sequence,'data':payload})
-                    
-                    if len(payload) > 0 and printout == True:
-                        logger.info(binascii.hexlify(payload))
-                    try:
-                        read = data.pop(0)
+                # currentTime = round(time.time() * 10000) - ts
+                
+                
+                # f.write(str(currentTime))
+                # f.write("\t")
+                # f.write(str(max(currentTime - lastTime,0)))
+                # f.write("\t")
+                packetSet = udp.recv(1024)
+                                                
+                # currentTime = round(time.time() * 10000) - ts
+                                
+                # f.write(str(currentTime))
+                # f.write("\t")
+                # f.write(str(max(currentTime - lastTime,0)))
+                # f.write("\t")
+                packets= packetSet.split(packetSplit)
+                # lastTime = currentTime
+                # for p in packets:
+                #     f.write(p.split(dataSplit)[1])
+                #     f.write("-")          
+                #     f.write(binascii.hexlify( p.split(dataSplit)[0] ))
+                #     f.write("\t")        
+                # f.write("\n")                        
+                
+                
+#                f.write(binascii.hexlify(packetSet))
+#                f.write("\n")
 
-                        ts = read['ts']
-                        toSend = read['data']
+                try:
+                    while True:
+                        packetNum = 0
+                        
+                        #go through all packets 
+                        for p in packets:
+                          if int(p.split(dataSplit)[1]) == currentSequence:
+                            break
+                          packetNum += 1
+                        
+                        #if the packet needed is not here,  grab the latest in the set
+                        if packetNum == len(packets):
+                            packetNum = 0
+                        
+                        
+                        
+                        # now = time.time()
+                        # t_delta = round(((now - last)*1000),0)
+                        # logger.info("Arrival Spacing: %s" % t_delta)
+                        # last = now
+                        message = packets[packetNum]
+                        payload = message.split(dataSplit)[0]
+                        sequence = message.split(dataSplit)[1]
+                        if int(sequence) < currentSequence:
+                            break  #All packets are old data, so drop it entirely
+                        
+                        currentSequence = int(sequence) + 1
+                        
+                        toSend = payload
                         append = ""
                         # append = "\r\n"
                         ser.write(toSend+append)
-                    except IndexError:
-                        continue
+                        if len(payload) > 0 and printout == True:
+                            logger.info(binascii.hexlify(payload))
+                        if packetNum == 0: # if the first packet was the processed packet,  no need to go through the rest
+                            break
+
+                except IndexError:
+                    continue
                     
         logger.info("listener stopped")
-                
+        # f.close()        
                 
     def sender(side,opponent):
         global state
@@ -186,7 +237,14 @@ def netlink_exchange(side,net_state,opponent):
         if side == 'master':
             oppPort = 20001
         last = 0
-        sequence = 0.0
+        sequence = 0
+        # f = open("send-output.txt", "a")
+        # f.write("New output")
+        # f.write("\n")
+        # ts = round(time.time() * 10000)
+        # lastTime = round(time.time() * 10000) - ts
+        packets = []
+        
         while(state != "netlink_disconnected"):
             if ser.in_waiting > 0:
                 # now = time.time()
@@ -209,15 +267,47 @@ def netlink_exchange(side,net_state,opponent):
                     ser.close()
                     logger.info("sender stopped")
                     return
-                delimiter = "sequenceno"
+                
                 try:
                     payload = raw_input
-                    ts = str(sequence)
+                    seq = str(sequence)
                     if len(payload)>0:
-                        for i in range(2): #redundantly send packets
-                            ready = select.select([],[udp],[])
+                        
+                        packets.insert(0,(payload+dataSplit+seq))
+                        if(len(packets) > 5):
+                            packets.pop()
+                            
+                        # currentTime = round(time.time() * 10000) - ts
+                              
+                        # f.write(str(currentTime))
+                        # f.write("\t")
+                        # f.write(str(max(currentTime - lastTime,0)))
+                        # f.write("\t")
+                        # lastTime = currentTime
+                        for i in range(2):    
+                            ready = select.select([],[udp],[])   
                             if ready[1]:
-                                udp.sendto((payload+delimiter+ts), (opponent,oppPort))
+                                udp.sendto(packetSplit.join(packets), (opponent,oppPort))
+                                # f.write("Success")
+                        # else:
+                        #     f.write("Dropped")  
+                            
+                        # currentTime = round(time.time() * 10000) - ts
+                        # f.write("\t")
+                        # f.write(str(currentTime))
+                        # f.write("\t")
+                        # f.write(str(max(currentTime - lastTime,0)))
+                       
+                        # lastTime = currentTime
+                       
+                        # for p in packets:
+                        #     f.write(p.split(dataSplit)[1])
+                        #     f.write("-")          
+                        #     f.write(binascii.hexlify( p.split(dataSplit)[0] ))
+                        #     f.write("\t")   
+                       
+                        
+                        # f.write("\n")          
                         sequence+=1
                 except:
                     continue

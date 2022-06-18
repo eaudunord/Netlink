@@ -50,7 +50,7 @@ class Modem(object):
             self.disconnect()
         print("Opening netlink serial interface to {}".format(self._device))
         self._serial = serial.Serial(
-            self._device, self._speed, timeout=0.01
+            self._device, self._speed, timeout=0.03
         )
 
     def disconnect(self):
@@ -114,7 +114,7 @@ class Modem(object):
         print("Connected")
          
 
-    def send_command(self, command, timeout=60, ignore_responses=None):
+    def send_command(self, command, timeout=160, ignore_responses=None):
         ignore_responses = ignore_responses or []  # Things to completely ignore
 
         VALID_RESPONSES = ["OK", "ERROR", "CONNECT", "VCON"]

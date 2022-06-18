@@ -58,7 +58,7 @@ class Modem(object):
             self._serial.flush() #added a flush, is data hanging on in the buffer?
             self._serial.close()
             self._serial = None
-            print("Serial interface terminated")
+            # print("Serial interface terminated")
 
     def reset(self):
         self.send_command("ATZ0")  # Send reset command

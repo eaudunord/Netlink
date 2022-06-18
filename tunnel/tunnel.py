@@ -60,7 +60,6 @@ def process():
                 time_digit_heard = None
                 modem.answer()
                 modem.disconnect()
-                logger.info("diconnecting serial port")
                 mode = "CONNECTED"
 
         elif mode == "CONNECTED":
