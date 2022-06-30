@@ -50,7 +50,7 @@ def digit_parser(modem):
         dial_string = char
         last_heard = time.time()
         while(True):
-            if time.time() - last_heard > 5:
+            if time.time() - last_heard > 3:
                 break
             char = modem._serial.read(1)
             if not char:
@@ -65,7 +65,8 @@ def digit_parser(modem):
             
         try:
             if dial_string == "19876543210":
-                 return {'client':'direct_dial','dial_string':dial_string,'side':'master'}
+                opponent_ip = u'192.168.0.87'
+                return {'client':'direct_dial','dial_string':opponent_ip,'side':'master'}
             kddi_opponent = "859" + dial_string.split("859")[1]
             kddi_lookup = "http://dc.dude22072.com/kddi/dialplandb.php?phoneNumber=%s" % kddi_opponent
             opponent_ip = requests.get(kddi_lookup).content.decode('utf8')
