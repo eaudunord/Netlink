@@ -22,6 +22,7 @@ import struct
 import threading
 import binascii
 import select
+import requests
 
 packetSplit = "<packetSplit>"
 dataSplit = "<dataSplit>"
@@ -46,7 +47,33 @@ def digit_parser(modem):
     tel_digits = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
     ip_digits = ['0','1', '2', '3', '4', '5', '6', '7', '8', '9','*']
     if char in tel_digits:
-        return {'client':'ppp_internet','dial_string':char,'side':'na'}
+        dial_string = char
+        last_heard = time.time()
+        while(True):
+            if time.time() - last_heard > 5:
+                break
+            char = modem._serial.read(1)
+            if not char:
+                continue
+            if ord(char) == 16:
+                try:
+                    char = modem._serial.read(1)
+                    dial_string+= int(char)
+                    last_heard = time.time()
+                except (TypeError, ValueError):
+                    pass
+            
+        try:
+            if dial_string == "19876543210":
+                 return {'client':'direct_dial','dial_string':dial_string,'side':'master'}
+            kddi_opponent = "859" + dial_string.split("859")[1]
+            kddi_lookup = "http://dc.dude22072.com/kddi/dialplandb.php?phoneNumber=%s" % kddi_opponent
+            opponent_ip = requests.get(kddi_lookup).content.decode('utf8')
+            return {'client':'direct_dial','dial_string':opponent_ip,'side':'master'}
+
+        except:
+            return {'client':'ppp_internet','dial_string':dial_string,'side':'na'}
+
     elif char == '0':
         return {'client':'direct_dial','dial_string':char,'side':'slave'}
     elif char == '#':
