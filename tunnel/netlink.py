@@ -22,7 +22,7 @@ import struct
 import threading
 import binascii
 import select
-import requests
+import urllib2
 
 packetSplit = "<packetSplit>"
 dataSplit = "<dataSplit>"
@@ -58,18 +58,21 @@ def digit_parser(modem):
             if ord(char) == 16:
                 try:
                     char = modem._serial.read(1)
-                    dial_string+= int(char)
+                    digit = int(char)
+                    dial_string+= str(digit)
                     last_heard = time.time()
                 except (TypeError, ValueError):
                     pass
             
         try:
             if dial_string == "19876543210":
-                opponent_ip = u'192.168.0.87'
+                opponent_ip = '192.168.0.87'
+                print(opponent_ip)
                 return {'client':'direct_dial','dial_string':opponent_ip,'side':'master'}
             kddi_opponent = "859" + dial_string.split("859")[1]
             kddi_lookup = "http://dc.dude22072.com/kddi/dialplandb.php?phoneNumber=%s" % kddi_opponent
-            opponent_ip = requests.get(kddi_lookup).content.decode('utf8')
+            response = urllib2.urlopen(kddi_lookup)
+            opponent_ip = response.read()
             return {'client':'direct_dial','dial_string':opponent_ip,'side':'master'}
 
         except:
@@ -259,7 +262,7 @@ def netlink_exchange(side,net_state,opponent):
     def sender(side,opponent):
         global state
         logger.info("sending")
-        first_run = True
+        first_run = False
         if side == "slave":
             oppPort = 20002
         if side == 'master':
