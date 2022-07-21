@@ -103,15 +103,15 @@ def digit_parser(modem):
     else:
         return "nada"
 
-def initConnection(ms,dial_string,tcp):
+def initConnection(ms,dial_string):
     opponent = dial_string.replace('*','.')
     if ms == "slave":
         logger.info("I'm slave")
-        # PORT = 65432
-        # tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # tcp.settimeout(120)
-        # tcp.bind(('', PORT))
-        # tcp.listen(5)
+        PORT = 65432
+        tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        tcp.settimeout(120)
+        tcp.bind(('', PORT))
+        tcp.listen(5)
         ready = select.select([tcp], [], [])
         if ready[0]:
             conn, addr = tcp.accept()
@@ -131,19 +131,19 @@ def initConnection(ms,dial_string,tcp):
                     logger.info("Ready for Netlink!")
                     ts = time.time()
                     conn.sendall(struct.pack('d',ts))
-                    conn.shutdown(socket.SHUT_RDWR)
-                    conn.close()
+                    tcp.shutdown(socket.SHUT_RDWR)
+                    tcp.close()
                     return ["connected",opponent]
                 if not data:
                     print("failed to init")
-                    conn.shutdown(socket.SHUT_RDWR)
-                    conn.close()
+                    tcp.shutdown(socket.SHUT_RDWR)
+                    tcp.close()
                     break
     if ms == "master":
         logger.info("I'm master")
-        # PORT = 65432
-        # tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # tcp.settimeout(120)
+        PORT = 65432
+        tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        tcp.settimeout(120)
         tcp.connect((opponent, PORT))
         tcp.sendall(b"readyip")
         ready = select.select([tcp], [], [])
@@ -152,8 +152,8 @@ def initConnection(ms,dial_string,tcp):
             if data.split(b'ip')[0] == b'g2g':
                 logger.info("Ready for Netlink!")
                 ts = tcp.recv(1024)
-                # tcp.shutdown(socket.SHUT_RDWR)
-                # tcp.close()
+                tcp.shutdown(socket.SHUT_RDWR)
+                tcp.close()
                 return ["connected",opponent]
                 
     else:
@@ -167,10 +167,10 @@ def initConnection(ms,dial_string,tcp):
          
 
 
-def netlink_setup(device_and_speed,side,dial_string,tcp):
+def netlink_setup(device_and_speed,side,dial_string):
     global ser
     ser = serial.Serial(device_and_speed[0], device_and_speed[1], timeout=timeout)
-    state = initConnection(side,dial_string,tcp)
+    state = initConnection(side,dial_string)
     time.sleep(0.2)
     return state
 

@@ -13,19 +13,14 @@ device_and_speed = [com_port,115200]
 modem = Modem(device_and_speed[0], device_and_speed[1])
 
 
-def do_netlink(side,dial_string,tcp):
+def do_netlink(side,dial_string):
     # ser = serial.Serial(device_and_speed[0], device_and_speed[1], timeout=0.02)
-    state, opponent  = netlink.netlink_setup(device_and_speed,side,dial_string,tcp)
+    state, opponent  = netlink.netlink_setup(device_and_speed,side,dial_string)
     netlink.netlink_exchange(side,state,opponent)
 
 
 def process():
-    PORT = 65432
-    tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    tcp.setblocking(0)
-    tcp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    tcp.bind(('', PORT))
-    tcp.listen(5)
+    
 
     mode = "LISTENING"
 
@@ -72,7 +67,7 @@ def process():
         elif mode == "CONNECTED":
             
             if client == "direct_dial":
-                do_netlink(side,dial_string,tcp)
+                do_netlink(side,dial_string)
                 logger.info("Netlink Disconnected")
                 time.sleep(5)
                 mode = "LISTENING"
