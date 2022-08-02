@@ -50,7 +50,7 @@ class Modem(object):
             self.disconnect()
         print("Opening netlink serial interface to {}".format(self._device))
         self._serial = serial.Serial(
-            self._device, self._speed, timeout=0.03
+            self._device, self._speed, timeout=0.01
         )
 
     def disconnect(self):
@@ -58,7 +58,7 @@ class Modem(object):
             self._serial.flush() #added a flush, is data hanging on in the buffer?
             self._serial.close()
             self._serial = None
-            print("Serial interface terminated")
+            # print("Serial interface terminated")
 
     def reset(self):
         self.send_command("ATZ0")  # Send reset command
@@ -101,20 +101,9 @@ class Modem(object):
         print("Call answered!")
         # logger.info(subprocess.check_output(["pon", "dreamcast"]))
         print("Connected")
-
-    def lat_answer(self):
-        self.reset()
-        self.send_command("AT&D0&Q6&S1E0V1&C1W2s7=30\N+MS=10X1")
-        # When we send ATA we only want to look for CONNECT. Some modems respond OK then CONNECT
-        # and that messes everything up
-        self.send_command("ATA", ignore_responses=["OK"])
-        time.sleep(5)
-        print("Call answered!")
-        # logger.info(subprocess.check_output(["pon", "dreamcast"]))
-        print("Connected")
          
 
-    def send_command(self, command, timeout=160, ignore_responses=None):
+    def send_command(self, command, timeout=60, ignore_responses=None):
         ignore_responses = ignore_responses or []  # Things to completely ignore
 
         VALID_RESPONSES = ["OK", "ERROR", "CONNECT", "VCON"]
