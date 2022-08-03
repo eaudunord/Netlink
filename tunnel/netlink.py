@@ -122,9 +122,9 @@ def initConnection(ms,dial_string):
          
 
 
-def netlink_setup(device_and_speed,side,dial_string):
+def netlink_setup(device_and_speed,side,dial_string,modem):
     global ser
-    ser = serial.Serial(device_and_speed[0], device_and_speed[1], timeout=timeout)
+    ser = modem._serial
     state = initConnection(side,dial_string)
     time.sleep(0.2)
     return state

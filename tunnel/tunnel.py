@@ -32,7 +32,7 @@ def com_scanner():
         finally:
             modem.disconnect()
 
-def query_modem(modem, command, timeout=3):
+def query_modem(modem, command, timeout=3, response = "OK"):
               
         final_command = "%s\r\n" % command
         modem._serial.write(final_command)
@@ -51,7 +51,7 @@ def query_modem(modem, command, timeout=3):
 
             line = line + new_data
             
-            if "OK" in line:
+            if response in line:
                 return  # Valid response
 
 try:
@@ -69,9 +69,9 @@ device_and_speed = [com_port,115200]
 modem = Modem(device_and_speed[0], device_and_speed[1])
 
 
-def do_netlink(side,dial_string):
+def do_netlink(side,dial_string,modem):
     # ser = serial.Serial(device_and_speed[0], device_and_speed[1], timeout=0.02)
-    state, opponent  = netlink.netlink_setup(device_and_speed,side,dial_string)
+    state, opponent  = netlink.netlink_setup(device_and_speed,side,dial_string,modem)
     netlink.netlink_exchange(side,state,opponent)
 
 
@@ -105,8 +105,10 @@ def process():
 
 
                         logger.info("Heard: %s" % dial_string)
-
-                        mode = "ANSWERING"
+                        if client == "direct_dial":
+                            mode = "NETLINK ANSWERING"
+                        else:
+                            mode = "ANSWERING"
                         modem.stop_dial_tone()
                         time_digit_heard = now
                 except (TypeError, ValueError):
@@ -117,11 +119,23 @@ def process():
                 modem.answer()
                 modem.disconnect()
                 mode = "CONNECTED"
+        elif mode == "NETLINK ANSWERING":
+            if (now - time_digit_heard).total_seconds() > 8.0:
+                time_digit_heard = None
+                modem.connect_netlink()
+                try:
+                    query_modem(modem, "ATA", timeout=120, response = "CONNECT")
+                    mode = "CONNECTED"
+                except IOError:
+                    modem.connect()
+                    mode = "LISTENING"
+                    modem.start_dial_tone()
+
 
         elif mode == "CONNECTED":
             
             if client == "direct_dial":
-                do_netlink(side,dial_string)
+                do_netlink(side,dial_string,modem)
                 logger.info("Netlink Disconnected")
                 time.sleep(5)
                 mode = "LISTENING"
