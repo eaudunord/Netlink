@@ -34,13 +34,13 @@ def com_scanner():
 
 def query_modem(modem, command, timeout=3, response = "OK"):
               
-        final_command = "%s\r\n" % command
+        final_command = ("%s\r\n" % command).encode()
         modem._serial.write(final_command)
         print(final_command)
 
         start = time.time()
 
-        line = ""
+        line = b""
         while True:
             new_data = modem._serial.readline().strip()
 
@@ -51,7 +51,7 @@ def query_modem(modem, command, timeout=3, response = "OK"):
 
             line = line + new_data
             
-            if response in line:
+            if response.encode() in line:
                 return  # Valid response
 
 try:

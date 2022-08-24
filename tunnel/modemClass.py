@@ -86,7 +86,7 @@ class Modem(object):
         if not self._sending_tone:
             return
 
-        self._serial.write("\0{}{}\r\n".format(chr(0x10), chr(0x03)))
+        self._serial.write(("\0{}{}\r\n".format(chr(0x10), chr(0x03))).encode())
         self.send_escape()
         self.send_command("ATH0")  # Go on-hook
         self.reset()  # Reset the modem
@@ -106,18 +106,18 @@ class Modem(object):
     def send_command(self, command, timeout=60, ignore_responses=None):
         ignore_responses = ignore_responses or []  # Things to completely ignore
 
-        VALID_RESPONSES = ["OK", "ERROR", "CONNECT", "VCON"]
+        VALID_RESPONSES = [b"OK", b"ERROR", b"CONNECT", b"VCON"]
 
         for ignore in ignore_responses:
-            VALID_RESPONSES.remove(ignore)
+            VALID_RESPONSES.remove(ignore.encode())
 
-        final_command = "%s\r\n" % command
+        final_command = ("%s\r\n" % command).encode()
         self._serial.write(final_command)
         print(final_command)
 
         start = datetime.now()
 
-        line = ""
+        line = b""
         while True:
             new_data = self._serial.readline().strip()
 
@@ -136,7 +136,7 @@ class Modem(object):
 
     def send_escape(self):
         time.sleep(1.0)
-        self._serial.write("+++")
+        self._serial.write(b"+++")
         time.sleep(1.0)
 
     def update(self):

@@ -20,8 +20,8 @@ import threading
 import binascii
 import select
 
-packetSplit = "<packetSplit>"
-dataSplit = "<dataSplit>"
+packetSplit = b"<packetSplit>"
+dataSplit = b"<dataSplit>"
 printout = False
 if 'printout' in sys.argv:
     printout = True
@@ -81,11 +81,11 @@ def initConnection(ms,dial_string):
                     data = conn.recv(1024)
                 except socket.error: #first try can return no payload
                     continue
-                if data == b'ready':
-                    conn.sendall(b'g2g')
+                if data == b'readyip':
+                    conn.sendall(b'g2gip')
                     logger.info("Sending Ring")
-                    ser.write("RING\r\n")
-                    ser.write("CONNECT\r\n")
+                    ser.write(("RING\r\n").encode())
+                    ser.write(("CONNECT\r\n").encode())
                     logger.info("Ready for Netlink!")
                     tcp.shutdown(socket.SHUT_RDWR)
                     tcp.close()
@@ -101,11 +101,11 @@ def initConnection(ms,dial_string):
         tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         tcp.settimeout(120)
         tcp.connect((opponent, PORT))
-        tcp.sendall(b"ready")
+        tcp.sendall(b"readyip")
         ready = select.select([tcp], [], [])
         if ready[0]:
             data = tcp.recv(1024)
-            if data == b'g2g':
+            if data == b'g2gip':
                 logger.info("Ready for Netlink!")
                 tcp.shutdown(socket.SHUT_RDWR)
                 tcp.close()
@@ -178,7 +178,10 @@ def netlink_exchange(side,net_state,opponent):
         global state
         logger.info("sending")
         first_run = False
-        oppPort = 20002
+        if side == "slave":
+            oppPort = 20002
+        if side == 'master':
+            oppPort = 20001
         last = 0
         sequence = 0
         packets = []
@@ -191,7 +194,7 @@ def netlink_exchange(side,net_state,opponent):
                     raw_input = ser.read(ser.in_waiting)
                 else:
                     raw_input = ser.read(ser.in_waiting)
-                if "NO CARRIER" in raw_input:
+                if b"NO CARRIER" in raw_input:
                     logger.info("detected hangup")
                     state = "netlink_disconnected"
                     time.sleep(1)
@@ -206,7 +209,7 @@ def netlink_exchange(side,net_state,opponent):
                     seq = str(sequence)
                     if len(payload)>0:
                         
-                        packets.insert(0,(payload+dataSplit+seq))
+                        packets.insert(0,(payload+dataSplit+seq.encode()))
                         if(len(packets) > 5):
                             packets.pop()
                             
@@ -224,7 +227,10 @@ def netlink_exchange(side,net_state,opponent):
     if state == "connected":
         t1 = threading.Thread(target=listener)
         t2 = threading.Thread(target=sender,args=(side,opponent))
-        Port = 20002
+        if side == "slave":
+            Port = 20001
+        if side == 'master':
+            Port = 20002
         udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         udp.setblocking(0)
         udp.bind(('', Port))
