@@ -32,7 +32,7 @@ def com_scanner():
         finally:
             modem.disconnect()
 
-def query_modem(modem, command, timeout=3, response = "OK"):
+def query_modem(modem, command, timeout=3, response = "OK"): #this function assumes we're being passed a non-blocking modem
               
         final_command = ("%s\r\n" % command).encode()
         modem._serial.write(final_command)
@@ -44,7 +44,7 @@ def query_modem(modem, command, timeout=3, response = "OK"):
         while True:
             new_data = modem._serial.readline().strip()
 
-            if not new_data:
+            if not new_data: #non-blocking modem will end up here when timeout reached, try until this function's timeout is reached.
                 if time.time() - start < timeout:
                     continue
                 raise IOError()
@@ -122,7 +122,7 @@ def process():
         elif mode == "NETLINK ANSWERING":
             if (now - time_digit_heard).total_seconds() > 8.0:
                 time_digit_heard = None
-                modem.connect_netlink()
+                modem.connect_netlink() #non-blocking version
                 try:
                     query_modem(modem, "ATA", timeout=120, response = "CONNECT")
                     mode = "CONNECTED"

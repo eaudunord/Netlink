@@ -37,7 +37,7 @@ class Modem(object):
 
         return dial_tone
 
-    def connect(self):
+    def connect(self): #blocking
         if self._serial:
             self.disconnect()
 
@@ -45,7 +45,7 @@ class Modem(object):
         self._serial = serial.Serial(
             self._device, self._speed, timeout=0
         )
-    def connect_netlink(self):
+    def connect_netlink(self): #non-blocking
         if self._serial:
             self.disconnect()
         print("Opening netlink serial interface to {}".format(self._device))
@@ -97,7 +97,7 @@ class Modem(object):
         # When we send ATA we only want to look for CONNECT. Some modems respond OK then CONNECT
         # and that messes everything up
         self.send_command("ATA", ignore_responses=["OK"])
-        time.sleep(5)
+        #time.sleep(5)
         print("Call answered!")
         # logger.info(subprocess.check_output(["pon", "dreamcast"]))
         print("Connected")
@@ -119,7 +119,7 @@ class Modem(object):
 
         line = b""
         while True:
-            new_data = self._serial.readline().strip()
+            new_data = self._serial.readline().strip() #this is blocking
 
             if not new_data:
                 continue
@@ -131,7 +131,7 @@ class Modem(object):
                     # logger.info(line[line.find(resp):])
                     return  # We are done
 
-            if (datetime.now() - start).total_seconds() > timeout:
+            if (datetime.now() - start).total_seconds() > timeout: #if readline gets hung up, this if will never be reached
                 raise IOError("There was a timeout while waiting for a response from the modem")
 
     def send_escape(self):
