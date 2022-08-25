@@ -32,7 +32,7 @@ poll_rate = 0.01
 ser = ""
 
 def digit_parser(modem):
-    char = modem._serial.read(1)
+    char = modem._serial.read(1).decode()
     tel_digits = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
     ip_digits = ['0','1', '2', '3', '4', '5', '6', '7', '8', '9','*']
     if char in tel_digits:
@@ -42,12 +42,12 @@ def digit_parser(modem):
     elif char == '#':
         dial_string = ""
         while (True):
-            char = modem._serial.read(1)
+            char = modem._serial.read(1).decode()
             if not char:
                 continue
             if ord(char) == 16: #16 is DLE
                 try:
-                    char = modem._serial.read(1)
+                    char = modem._serial.read(1).decode()
                     if char == '#':
                         if '*' in dial_string:
                             break
@@ -64,6 +64,12 @@ def digit_parser(modem):
 
 def initConnection(ms,dial_string):
     opponent = dial_string.replace('*','.')
+    ip_set = opponent.split('.')
+    for i,set in enumerate(ip_set):
+        fixed = str(int(set))
+        ip_set[i] = fixed
+    opponent = ('.').join(ip_set)
+
     if ms == "slave":
         logger.info("I'm slave")
         PORT = 65432
@@ -87,13 +93,13 @@ def initConnection(ms,dial_string):
                     ser.write(("RING\r\n").encode())
                     ser.write(("CONNECT\r\n").encode())
                     logger.info("Ready for Netlink!")
-                    tcp.shutdown(socket.SHUT_RDWR)
-                    tcp.close()
+                    #tcp.shutdown(socket.SHUT_RDWR)
+                    #tcp.close()
                     return ["connected",opponent]
                 if not data:
                     print("failed to init")
-                    tcp.shutdown(socket.SHUT_RDWR)
-                    tcp.close()
+                    #tcp.shutdown(socket.SHUT_RDWR)
+                    #tcp.close()
                     break
     if ms == "master":
         logger.info("I'm master")
@@ -107,8 +113,8 @@ def initConnection(ms,dial_string):
             data = tcp.recv(1024)
             if data == b'g2gip':
                 logger.info("Ready for Netlink!")
-                tcp.shutdown(socket.SHUT_RDWR)
-                tcp.close()
+                #tcp.shutdown(socket.SHUT_RDWR)
+                #tcp.close()
                 return ["connected",opponent]
                 
     else:
@@ -135,7 +141,7 @@ def netlink_exchange(side,net_state,opponent):
         last = 0
         currentSequence = 0
         while(state != "netlink_disconnected"):
-            ready = select.select([udp],[],[],0.003)
+            ready = select.select([udp],[],[],0.01)
             if ready[0]:
                 packetSet = udp.recv(1024)
                 packets= packetSet.split(packetSplit)

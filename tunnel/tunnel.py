@@ -36,7 +36,7 @@ def query_modem(modem, command, timeout=3, response = "OK"):
               
         final_command = ("%s\r\n" % command).encode()
         modem._serial.write(final_command)
-        print(final_command)
+        print(final_command.decode())
 
         start = time.time()
 
@@ -88,7 +88,7 @@ def process():
 
         if mode == "LISTENING":
             modem.update()
-            char = modem._serial.read(1).strip()
+            char = modem._serial.read(1).strip().decode()
             if not char:
                 continue
 

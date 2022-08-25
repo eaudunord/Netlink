@@ -113,7 +113,7 @@ class Modem(object):
 
         final_command = ("%s\r\n" % command).encode()
         self._serial.write(final_command)
-        print(final_command)
+        print(final_command.decode())
 
         start = datetime.now()
 
