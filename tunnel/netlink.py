@@ -32,46 +32,64 @@ poll_rate = 0.01
 ser = ""
 
 def digit_parser(modem):
-    char = modem._serial.read(1).decode()
+    char = modem._serial.read(1).decode() #first character was <DLE>, what's next?
     tel_digits = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
     ip_digits = ['0','1', '2', '3', '4', '5', '6', '7', '8', '9','*']
     if char in tel_digits:
-        return {'client':'ppp_internet','dial_string':char,'side':'na'}
-    elif char == '0':
-        return {'client':'direct_dial','dial_string':char,'side':'slave'}
-    elif char == '#':
-        dial_string = ""
-        while (True):
+        dial_string = char
+        last_heard = time.time()
+        while(True):
+            if time.time() - last_heard > 3: #if more than 3 seconds of silence, assume done dialing.
+                break
             char = modem._serial.read(1).decode()
             if not char:
                 continue
-            if ord(char) == 16: #16 is DLE
+            if ord(char) == 16:
+                try:
+                    char = modem._serial.read(1).decode()
+                    digit = int(char) #will raise exception if anything but a digit
+                    dial_string+= str(digit)
+                    last_heard = time.time()
+                except (TypeError, ValueError):
+                    pass
+        #at this point we have the full dialed string. We can insert an IP address lookup here. For now, assume PPP
+        return {'client':'ppp_internet','dial_string':dial_string,'side':'na'}
+
+    elif char == '0':
+        return {'client':'direct_dial','dial_string':char,'side':'waiting'}
+    elif char == '#':
+        dial_string = ""
+        while (True):
+            char = modem._serial.read(1).decode() #this is blocking, but the modem sends <DLE>s at regular intervals to indicate silence
+            if not char: #which makes this pointless
+                continue
+            if ord(char) == 16: #16 is <DLE>
                 try:
                     char = modem._serial.read(1).decode()
                     if char == '#':
-                        if '*' in dial_string:
+                        if '*' in dial_string: #if the ip address was dialed with * no need for further formatting
                             break
-                        elif len(dial_string) == 12:
+                        elif len(dial_string) == 12: #if we have a full 12 digit string add in '.' every three characters
                             dial_string = '.'.join(dial_string[i:i+3] for i in range(0, len(dial_string), 3))
                             break
                     if char in ip_digits:
                         dial_string += char
-                except (TypeError, ValueError):
+                except (TypeError, ValueError):#Dreampi originally tried to convert characters to int and passed on the exception raised for other characters. This shouldn't be needed anymore.
                     pass
-        return {'client':'direct_dial','dial_string':dial_string,'side':'master'}
+        return {'client':'direct_dial','dial_string':dial_string,'side':'calling'}
     else:
         return "nada"
 
 def initConnection(ms,dial_string):
     opponent = dial_string.replace('*','.')
     ip_set = opponent.split('.')
-    for i,set in enumerate(ip_set):
+    for i,set in enumerate(ip_set): #socket connect doesn't like leading zeroes now
         fixed = str(int(set))
         ip_set[i] = fixed
     opponent = ('.').join(ip_set)
 
-    if ms == "slave":
-        logger.info("I'm slave")
+    if ms == "waiting":
+        logger.info("I'm waiting")
         PORT = 65432
         tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         tcp.settimeout(120)
@@ -92,8 +110,8 @@ def initConnection(ms,dial_string):
                     logger.info("Sending Ring")
                     ser.write(("RING\r\n").encode())
                     ser.write(("CONNECT\r\n").encode())
-                    logger.info("Ready for Netlink!")
-                    #tcp.shutdown(socket.SHUT_RDWR)
+                    logger.info("Ready for Data Exchange!")
+                    #tcp.shutdown(socket.SHUT_RDWR) #best practice is to close your socket, but it gives me issues.
                     #tcp.close()
                     return ["connected",opponent]
                 if not data:
@@ -101,8 +119,8 @@ def initConnection(ms,dial_string):
                     #tcp.shutdown(socket.SHUT_RDWR)
                     #tcp.close()
                     break
-    if ms == "master":
-        logger.info("I'm master")
+    if ms == "calling":
+        logger.info("I'm calling")
         PORT = 65432
         tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         tcp.settimeout(120)
@@ -112,7 +130,7 @@ def initConnection(ms,dial_string):
         if ready[0]:
             data = tcp.recv(1024)
             if data == b'g2gip':
-                logger.info("Ready for Netlink!")
+                logger.info("Ready for Data Exchange!")
                 #tcp.shutdown(socket.SHUT_RDWR)
                 #tcp.close()
                 return ["connected",opponent]
@@ -132,7 +150,7 @@ def netlink_setup(device_and_speed,side,dial_string,modem):
     global ser
     ser = modem._serial
     state = initConnection(side,dial_string)
-    time.sleep(0.2)
+    #time.sleep(0.2)
     return state
 
 def netlink_exchange(side,net_state,opponent):
@@ -141,7 +159,7 @@ def netlink_exchange(side,net_state,opponent):
         last = 0
         currentSequence = 0
         while(state != "netlink_disconnected"):
-            ready = select.select([udp],[],[],0.01)
+            ready = select.select([udp],[],[],0) #polling select
             if ready[0]:
                 packetSet = udp.recv(1024)
                 packets= packetSet.split(packetSplit)
@@ -184,9 +202,9 @@ def netlink_exchange(side,net_state,opponent):
         global state
         logger.info("sending")
         first_run = False
-        if side == "slave":
+        if side == "waiting":
             oppPort = 20002
-        if side == 'master':
+        if side == "calling":
             oppPort = 20001
         last = 0
         sequence = 0
@@ -220,7 +238,7 @@ def netlink_exchange(side,net_state,opponent):
                             packets.pop()
                             
                         for i in range(2): #send the data twice. May help with drops or latency    
-                            ready = select.select([],[udp],[])   
+                            ready = select.select([],[udp],[]) #blocking select  
                             if ready[1]:
                                 udp.sendto(packetSplit.join(packets), (opponent,oppPort))
                                     
@@ -233,9 +251,9 @@ def netlink_exchange(side,net_state,opponent):
     if state == "connected":
         t1 = threading.Thread(target=listener)
         t2 = threading.Thread(target=sender,args=(side,opponent))
-        if side == "slave":
+        if side == "waiting": #we're going to bind to a port. Some users may want to run two instances on one machine, so use different ports for waiting, calling
             Port = 20001
-        if side == 'master':
+        if side == "calling":
             Port = 20002
         udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         udp.setblocking(0)
