@@ -45,12 +45,12 @@ class Modem(object):
         self._serial = serial.Serial(
             self._device, self._speed, timeout=0
         )
-    def connect_netlink(self): #non-blocking
+    def connect_netlink(self,speed = 115200, timeout = 0.01): #non-blocking
         if self._serial:
             self.disconnect()
         print("Opening netlink serial interface to {}".format(self._device))
         self._serial = serial.Serial(
-            self._device, self._speed, timeout=0.01
+            self._device, speed, timeout=timeout
         )
 
     def disconnect(self):

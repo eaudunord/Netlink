@@ -122,10 +122,10 @@ def process():
         elif mode == "NETLINK ANSWERING":
             if (now - time_digit_heard).total_seconds() > 8.0:
                 time_digit_heard = None
-                modem.connect_netlink() #non-blocking version
+                modem.connect_netlink(speed=57600,timeout=0.01) #non-blocking version
                 try:
                     query_modem(modem, "ATA", timeout=120, response = "CONNECT")
-                    mode = "CONNECTED"
+                    mode = "NETLINK_CONNECTED"
                 except IOError:
                     modem.connect()
                     mode = "LISTENING"
@@ -133,14 +133,19 @@ def process():
 
 
         elif mode == "CONNECTED":
+            modem.connect()
+            modem.send_escape()
+            modem.start_dial_tone()
+            mode = "LISTENING"
+
             
-            if client == "direct_dial":
-                do_netlink(side,dial_string,modem)
-                logger.info("Netlink Disconnected")
-                time.sleep(5)
-                mode = "LISTENING"
-                modem.connect()
-                modem.start_dial_tone()
+        elif mode == "NETLINK_CONNECTED":
+            do_netlink(side,dial_string,modem)
+            logger.info("Netlink Disconnected")
+            # time.sleep(5)
+            mode = "LISTENING"
+            modem.connect()
+            modem.start_dial_tone()
 
 if __name__ == "__main__":
     process()
