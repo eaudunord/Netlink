@@ -37,7 +37,7 @@ class Modem(object):
 
         return dial_tone
 
-    def connect(self):
+    def connect(self): #blocking
         if self._serial:
             self.disconnect()
 
@@ -45,12 +45,12 @@ class Modem(object):
         self._serial = serial.Serial(
             self._device, self._speed, timeout=0
         )
-    def connect_netlink(self):
+    def connect_netlink(self,speed = 115200, timeout = 0.01, rtscts = False): #non-blocking
         if self._serial:
             self.disconnect()
         print("Opening netlink serial interface to {}".format(self._device))
         self._serial = serial.Serial(
-            self._device, self._speed, timeout=0.01
+            self._device, speed, timeout=timeout, rtscts = rtscts
         )
 
     def disconnect(self):
@@ -86,7 +86,7 @@ class Modem(object):
         if not self._sending_tone:
             return
 
-        self._serial.write("\0{}{}\r\n".format(chr(0x10), chr(0x03)))
+        self._serial.write(("\0{}{}\r\n".format(chr(0x10), chr(0x03))).encode())
         self.send_escape()
         self.send_command("ATH0")  # Go on-hook
         self.reset()  # Reset the modem
@@ -97,29 +97,51 @@ class Modem(object):
         # When we send ATA we only want to look for CONNECT. Some modems respond OK then CONNECT
         # and that messes everything up
         self.send_command("ATA", ignore_responses=["OK"])
-        time.sleep(5)
+        #time.sleep(5)
         print("Call answered!")
         # logger.info(subprocess.check_output(["pon", "dreamcast"]))
         print("Connected")
+    
+    def query_modem(self, command, timeout=3, response = "OK"): #this function assumes we're being passed a non-blocking modem
+              
+        final_command = ("%s\r\n" % command).encode()
+        self._serial.write(final_command)
+        print(final_command.decode())
+
+        start = time.time()
+
+        line = b""
+        while True:
+            new_data = self._serial.readline().strip()
+
+            if not new_data: #non-blocking modem will end up here when timeout reached, try until this function's timeout is reached.
+                if time.time() - start < timeout:
+                    continue
+                raise IOError()
+
+            line = line + new_data
+            
+            if response.encode() in line:
+                return  # Valid response
          
 
     def send_command(self, command, timeout=60, ignore_responses=None):
         ignore_responses = ignore_responses or []  # Things to completely ignore
 
-        VALID_RESPONSES = ["OK", "ERROR", "CONNECT", "VCON"]
+        VALID_RESPONSES = [b"OK", b"ERROR", b"CONNECT", b"VCON"]
 
         for ignore in ignore_responses:
-            VALID_RESPONSES.remove(ignore)
+            VALID_RESPONSES.remove(ignore.encode())
 
-        final_command = "%s\r\n" % command
+        final_command = ("%s\r\n" % command).encode()
         self._serial.write(final_command)
-        print(final_command)
+        print(final_command.decode())
 
         start = datetime.now()
 
-        line = ""
+        line = b""
         while True:
-            new_data = self._serial.readline().strip()
+            new_data = self._serial.readline().strip() #this is blocking
 
             if not new_data:
                 continue
@@ -131,12 +153,12 @@ class Modem(object):
                     # logger.info(line[line.find(resp):])
                     return  # We are done
 
-            if (datetime.now() - start).total_seconds() > timeout:
+            if (datetime.now() - start).total_seconds() > timeout: #if readline gets hung up, this if will never be reached
                 raise IOError("There was a timeout while waiting for a response from the modem")
 
     def send_escape(self):
         time.sleep(1.0)
-        self._serial.write("+++")
+        self._serial.write(b"+++")
         time.sleep(1.0)
 
     def update(self):

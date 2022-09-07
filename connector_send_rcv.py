@@ -99,7 +99,9 @@ def initConnection(ms=side,opponent=opponent,start=start):
 
 
 
-def listener():
+def listener(side):
+    print("listening")
+    first = True
     while(True):
         try:
             # print("test")
@@ -107,6 +109,15 @@ def listener():
             packet = udp.recvfrom(1024)
             # time.sleep(float((random.randint(0, 6)))/1000) #simulate network jitter
             message = packet[0]
+            sport = packet[1][1]
+            print(sport)
+            if first == True and side == "slave":
+                try:
+                    t3 = threading.Thread(target=sender,args=(sport,))
+                    t3.start()
+                    first = False
+                except:
+                    pass
             payload = message.split(b'sequenceno')[0]
             raw_sequence = message.split(b'sequenceno')[1]
             sequence = struct.unpack('d',raw_sequence)[0]
@@ -115,6 +126,8 @@ def listener():
         except KeyboardInterrupt:
             print("Error thread 1")
             sys.exit()
+        #except:
+            #continue
                 
 def printer():
     first_run = True
@@ -140,10 +153,10 @@ def printer():
                 # time.sleep(rate)
                 continue
             
-def sender():
+def sender(sport):
     print("sending")
     if side == "slave":
-        oppPort = 20001
+        oppPort = sport
     if side == 'master':
         oppPort = 20002
     while(state == "connected"):
@@ -164,12 +177,12 @@ def sender():
             continue
             
 
-                
-t1 = threading.Thread(target=listener)
+sport = 1                
+
 # t1.setDaemon(True)
-t2 = threading.Thread(target=printer)
+#t2 = threading.Thread(target=printer)
 # t2.setDaemon(True)
-t3 = threading.Thread(target=sender)
+
 # t3.setDaemon(True)
 state = initConnection(side)
 print(state)
@@ -181,11 +194,13 @@ if state == "connected":
         Port = 20002
     if side == 'master':
         Port = 20001
-
+    t1 = threading.Thread(target=listener,args=(side,))
     udp.bind((HOST, Port))
     t1.start()
-    t2.start()
-    t3.start()
+    #t2.start()
+    if side == "master":
+        t3 = threading.Thread(target=sender,args=(sport,))
+        t3.start()
     # t1.join()
     # t2.join()
     # t3.join()

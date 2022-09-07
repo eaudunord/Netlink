@@ -45,12 +45,12 @@ class Modem(object):
         self._serial = serial.Serial(
             self._device, self._speed, timeout=0
         )
-    def connect_netlink(self,speed = 115200, timeout = 0.01): #non-blocking
+    def connect_netlink(self,speed = 115200, timeout = 0.01, rtscts = False): #non-blocking
         if self._serial:
             self.disconnect()
         print("Opening netlink serial interface to {}".format(self._device))
         self._serial = serial.Serial(
-            self._device, speed, timeout=timeout
+            self._device, speed, timeout=timeout, rtscts = rtscts
         )
 
     def disconnect(self):
@@ -101,6 +101,28 @@ class Modem(object):
         print("Call answered!")
         # logger.info(subprocess.check_output(["pon", "dreamcast"]))
         print("Connected")
+    
+    def query_modem(self, command, timeout=3, response = "OK"): #this function assumes we're being passed a non-blocking modem
+              
+        final_command = ("%s\r\n" % command).encode()
+        self._serial.write(final_command)
+        print(final_command.decode())
+
+        start = time.time()
+
+        line = b""
+        while True:
+            new_data = self._serial.readline().strip()
+
+            if not new_data: #non-blocking modem will end up here when timeout reached, try until this function's timeout is reached.
+                if time.time() - start < timeout:
+                    continue
+                raise IOError()
+
+            line = line + new_data
+            
+            if response.encode() in line:
+                return  # Valid response
          
 
     def send_command(self, command, timeout=60, ignore_responses=None):

@@ -18,8 +18,8 @@ def com_scanner():
             modem = Modem(com_port, speed,send_dial_tone=False)
             modem.connect_netlink()
             #print("potential modem found at %s" % com)
-            query_modem(modem,"AT",timeout = 1) # potential modem. Other devices respond to AT, so not definitive.
-            query_modem(modem,"AT+FCLASS=8",timeout = 1) # if potential modem, find out if it's our voice modem
+            modem.query_modem("AT",timeout = 1) # potential modem. Other devices respond to AT, so not definitive.
+            modem.query_modem("AT+FCLASS=8",timeout = 1) # if potential modem, find out if it's our voice modem
             modem.reset()
             return com_port
         except serial.SerialException as e:
@@ -31,28 +31,6 @@ def com_scanner():
             com_port = None
         finally:
             modem.disconnect()
-
-def query_modem(modem, command, timeout=3, response = "OK"): #this function assumes we're being passed a non-blocking modem
-              
-        final_command = ("%s\r\n" % command).encode()
-        modem._serial.write(final_command)
-        print(final_command.decode())
-
-        start = time.time()
-
-        line = b""
-        while True:
-            new_data = modem._serial.readline().strip()
-
-            if not new_data: #non-blocking modem will end up here when timeout reached, try until this function's timeout is reached.
-                if time.time() - start < timeout:
-                    continue
-                raise IOError()
-
-            line = line + new_data
-            
-            if response.encode() in line:
-                return  # Valid response
 
 try:
     com_port = sys.argv[1]
@@ -122,9 +100,10 @@ def process():
         elif mode == "NETLINK ANSWERING":
             if (now - time_digit_heard).total_seconds() > 8.0:
                 time_digit_heard = None
-                modem.connect_netlink(speed=57600,timeout=0.01) #non-blocking version
+                modem.connect_netlink(speed=57600,timeout=0.01,rtscts=True) #non-blocking version
                 try:
-                    query_modem(modem, "ATA", timeout=120, response = "CONNECT")
+                    modem.query_modem("AT&K3", timeout=120)
+                    modem.query_modem("ATA", timeout=120, response = "CONNECT")
                     mode = "NETLINK_CONNECTED"
                 except IOError:
                     modem.connect()
