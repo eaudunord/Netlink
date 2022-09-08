@@ -1,6 +1,7 @@
 import netlink
 from modemClass import Modem
 import sys
+import os
 from datetime import datetime
 import logging
 import time
@@ -13,7 +14,11 @@ def com_scanner():
     global com_port
     speed = 115200
     for i in range(1,25): # this should be a big enough range. USB com ports usually end up in the teens.
-        com_port = "COM%s" % i
+        osName = os.name
+        if osName == 'posix': # should work on linux and Mac for USB modem, but untested.
+            com_port = "/dev/ttyACM%s" % i
+        else:
+            com_port = "COM%s" % i
         try:
             modem = Modem(com_port, speed,send_dial_tone=False)
             modem.connect_netlink()
@@ -33,7 +38,7 @@ def com_scanner():
             modem.disconnect()
 
 try:
-    com_port = sys.argv[1]
+    com_port = sys.argv[1] #script can be started with com port as an argument. If it isn't, we can scan for the modem.
 except IndexError:
     com_scanner()
     if com_port:
