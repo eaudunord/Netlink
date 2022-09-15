@@ -62,6 +62,7 @@ class Modem(object):
 
     def reset(self):
         self.send_command("ATZ0")  # Send reset command
+        time.sleep(1)
         self.send_command("ATE0")  # Don't echo our responses
 
     def start_dial_tone(self):
@@ -103,8 +104,11 @@ class Modem(object):
         print("Connected")
     
     def query_modem(self, command, timeout=3, response = "OK"): #this function assumes we're being passed a non-blocking modem
-              
-        final_command = ("%s\r\n" % command).encode()
+
+        if isinstance(command, bytes):
+            final_command = command + b'\r\n'
+        else:
+            final_command = ("%s\r\n" % command).encode()
         self._serial.write(final_command)
         print(final_command.decode())
 

@@ -146,7 +146,7 @@ def initConnection(ms,dial_string):
          
 
 
-def netlink_setup(device_and_speed,side,dial_string,modem):
+def netlink_setup(side,dial_string,modem):
     global ser
     ser = modem._serial
     state = initConnection(side,dial_string)
@@ -219,12 +219,13 @@ def netlink_exchange(side,net_state,opponent):
                 else:
                     raw_input = ser.read(ser.in_waiting)
                 if b"NO CARRIER" in raw_input:
-                    logger.info("detected hangup")
+                    logger.info("NO CARRIER")
+                    ser.write(("ATs86?\r\n").encode())
+                    response = ser.readline(1)
+                    print(response)
                     state = "netlink_disconnected"
                     time.sleep(1)
                     udp.close()
-                    ser.flush()
-                    ser.close()
                     logger.info("sender stopped")
                     return
                 

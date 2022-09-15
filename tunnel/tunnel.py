@@ -54,7 +54,7 @@ modem = Modem(device_and_speed[0], device_and_speed[1])
 
 def do_netlink(side,dial_string,modem):
     # ser = serial.Serial(device_and_speed[0], device_and_speed[1], timeout=0.02)
-    state, opponent  = netlink.netlink_setup(device_and_speed,side,dial_string,modem)
+    state, opponent  = netlink.netlink_setup(side,dial_string,modem)
     netlink.netlink_exchange(side,state,opponent)
 
 
@@ -105,9 +105,9 @@ def process():
         elif mode == "NETLINK ANSWERING":
             if (now - time_digit_heard).total_seconds() > 8.0:
                 time_digit_heard = None
-                modem.connect_netlink(speed=57600,timeout=0.01,rtscts=True) #non-blocking version
+                modem.connect_netlink(speed=57600,timeout=0.01,rtscts=False) #non-blocking version
                 try:
-                    modem.query_modem("AT&K3", timeout=120)
+                    modem.query_modem(b'\x61\x74\x25\x65\x30')
                     modem.query_modem("ATA", timeout=120, response = "CONNECT")
                     mode = "NETLINK_CONNECTED"
                 except IOError:
