@@ -105,9 +105,11 @@ def process():
         elif mode == "NETLINK ANSWERING":
             if (now - time_digit_heard).total_seconds() > 8.0:
                 time_digit_heard = None
-                modem.connect_netlink(speed=57600,timeout=0.01,rtscts=False) #non-blocking version
+                modem.connect_netlink(speed=57600,timeout=0.01,rtscts=True) #non-blocking version
                 try:
-                    modem.query_modem(b'\x61\x74\x25\x65\x30')
+                    # modem.query_modem(b'\x61\x74\x25\x65\x30')
+                    modem.query_modem(b'at%e0')
+                    modem.query_modem("AT&c1&d2s38=1")
                     modem.query_modem("ATA", timeout=120, response = "CONNECT")
                     mode = "NETLINK_CONNECTED"
                 except IOError:

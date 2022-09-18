@@ -33,7 +33,7 @@ ser = ""
 
 def digit_parser(modem):
     char = modem._serial.read(1).decode() #first character was <DLE>, what's next?
-    tel_digits = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
+    tel_digits = ['0','1', '2', '3', '4', '5', '6', '7', '8', '9']
     ip_digits = ['0','1', '2', '3', '4', '5', '6', '7', '8', '9','*']
     if char in tel_digits:
         dial_string = char
@@ -53,10 +53,11 @@ def digit_parser(modem):
                 except (TypeError, ValueError):
                     pass
         #at this point we have the full dialed string. We can insert an IP address lookup here. For now, assume PPP
-        return {'client':'ppp_internet','dial_string':dial_string,'side':'na'}
+        if dial_string == "0":
+            return {'client':'direct_dial','dial_string':dial_string,'side':'waiting'}
+        else:
+            return {'client':'ppp_internet','dial_string':dial_string,'side':'na'}
 
-    elif char == '0':
-        return {'client':'direct_dial','dial_string':char,'side':'waiting'}
     elif char == '#':
         dial_string = ""
         while (True):
@@ -220,9 +221,11 @@ def netlink_exchange(side,net_state,opponent):
                     raw_input = ser.read(ser.in_waiting)
                 if b"NO CARRIER" in raw_input:
                     logger.info("NO CARRIER")
-                    ser.write(("ATs86?\r\n").encode())
-                    response = ser.readline(1)
-                    print(response)
+                    # ser.write(("ATs86?\r\n").encode())
+                    # response = ser.readline().strip()
+                    # if len(response) == 0:
+                    #     response = ser.readline().strip()
+                    # print(response)
                     state = "netlink_disconnected"
                     time.sleep(1)
                     udp.close()

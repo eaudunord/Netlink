@@ -63,7 +63,8 @@ class Modem(object):
     def reset(self):
         self.send_command("ATZ0")  # Send reset command
         time.sleep(1)
-        self.send_command("ATE0")  # Don't echo our responses
+        self.send_command("AT&F0")
+        self.send_command("ATE0W2")  # Don't echo our responses
 
     def start_dial_tone(self):
         if not self._dial_tone_wav:
@@ -126,6 +127,8 @@ class Modem(object):
             line = line + new_data
             
             if response.encode() in line:
+                if response != "OK":
+                    print(line)
                 return  # Valid response
          
 
@@ -153,7 +156,8 @@ class Modem(object):
             line = line + new_data
             for resp in VALID_RESPONSES:
                 if resp in line:
-                    # print(line)
+                    if resp != b"OK":
+                        print(line)
                     # logger.info(line[line.find(resp):])
                     return  # We are done
 
