@@ -128,7 +128,7 @@ class Modem(object):
             
             if response.encode() in line:
                 if response != "OK":
-                    print(line)
+                    print(line.decode())
                 return  # Valid response
          
 
