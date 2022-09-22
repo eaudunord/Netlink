@@ -13,9 +13,44 @@ import six
 com_port = None
 logger = logging.getLogger('dreampi')
 
-# r=requests.get(url, stream = True)
-# for line in r.iter_lines():
-# 	if line: print(line)
+
+
+def updater():
+    base_script_url = "https://raw.githubusercontent.com/eaudunord/Netlink/latest/tunnel/"
+    checkScripts = ['modemClass.py','tunnel.py','netlink.py']
+    upFlag = False
+    for script in checkScripts:
+        url = base_script_url+script
+        try:
+            r=requests.get(url, stream = True)
+            for line in r.iter_lines():
+                if b'_version' in line: 
+                    upstream_version = str(line.decode().split('version=')[1]).strip()
+                    break
+            with open(script,'rb') as f:
+                for line in f:
+                    if b'_version' in line:
+                        local_version = str(line.decode().split('version=')[1]).strip()
+                        break
+            if upstream_version == local_version:
+                print('%s Up To Date' % script)
+            else:
+                optIn = six.moves.input('Update for %s available. Press enter to download or type no to skip >>')
+                if "no" in optIn.lower():
+                    continue
+                r = requests.get(url)
+                with open(script,'wb') as f:
+                    f.write(r.content)
+                print('%s Updated' % script)
+                upFlag = True
+            
+        except:
+            logger.info("Couldn't check updates for: %s" % script)
+    if upFlag:
+        print('Scripts updated. Please restart the tunnel')
+        sys.exit()
+
+updater()
 
 # with open("modemClass.py",'rb') as f:
 # 	for line in f:
