@@ -1,3 +1,4 @@
+tunnel_version=1663858487.3304944
 import netlink
 from modemClass import Modem
 import sys
@@ -7,8 +8,26 @@ import logging
 import time
 logging.basicConfig(level=logging.INFO)
 import serial
+import requests
+import six
 com_port = None
 logger = logging.getLogger('dreampi')
+
+# r=requests.get(url, stream = True)
+# for line in r.iter_lines():
+# 	if line: print(line)
+
+# with open("modemClass.py",'rb') as f:
+# 	for line in f:
+# 		if b'_version' in line:
+# 			version = line.decode().split('version=')[1]
+# 			print(version)
+# 			break
+
+# r = requests.get(url)
+# with open("modemClass.py",'wb') as f:
+# 	f.write(r.content)
+
 
 def com_scanner():
     global com_port

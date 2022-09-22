@@ -1,8 +1,10 @@
+modemClass_version=1663858266.854871
 import os
 import serial
 from datetime import datetime
 from datetime import timedelta
 import time
+
 
 
 class Modem(object):
@@ -157,7 +159,7 @@ class Modem(object):
             for resp in VALID_RESPONSES:
                 if resp in line:
                     if resp != b"OK":
-                        print(line)
+                        print(line.decode())
                     # logger.info(line[line.find(resp):])
                     return  # We are done
 
