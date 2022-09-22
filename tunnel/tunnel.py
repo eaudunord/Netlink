@@ -1,6 +1,4 @@
-tunnel_version=1663858487.3304944
-import netlink
-from modemClass import Modem
+tunnel_version=1663872260.57
 import sys
 import os
 from datetime import datetime
@@ -17,12 +15,13 @@ logger = logging.getLogger('dreampi')
 
 def updater():
     base_script_url = "https://raw.githubusercontent.com/eaudunord/Netlink/latest/tunnel/"
-    checkScripts = ['modemClass.py','tunnel.py','netlink.py']
-    upFlag = False
+    checkScripts = ['modemClass.py','tunnel.py','netlink.py','modem_inits.py']
+    restartFlag = False
     for script in checkScripts:
         url = base_script_url+script
         try:
             r=requests.get(url, stream = True)
+            r.raise_for_status()
             for line in r.iter_lines():
                 if b'_version' in line: 
                     upstream_version = str(line.decode().split('version=')[1]).strip()
@@ -35,22 +34,29 @@ def updater():
             if upstream_version == local_version:
                 print('%s Up To Date' % script)
             else:
-                optIn = six.moves.input('Update for %s available. Press enter to download or type no to skip >>')
+                optIn = six.moves.input('Update for %s available. Press enter to download or type no to skip >>' % script)
                 if "no" in optIn.lower():
                     continue
+                #make a handler for a bad request so bad data doesn't overwrite our local file
                 r = requests.get(url)
                 with open(script,'wb') as f:
                     f.write(r.content)
                 print('%s Updated' % script)
-                upFlag = True
+                if script == "tunnel.py":
+                    restartFlag = True
             
-        except:
+        except requests.exceptions.HTTPError:
             logger.info("Couldn't check updates for: %s" % script)
-    if upFlag:
-        print('Scripts updated. Please restart the tunnel')
+            continue
+    if restartFlag:
+        print('Main script updated. Please restart the tunnel')
         sys.exit()
 
 updater()
+
+import netlink
+from modemClass import Modem
+from modem_inits import saturn_inits
 
 # with open("modemClass.py",'rb') as f:
 # 	for line in f:
@@ -159,13 +165,10 @@ def process():
         elif mode == "NETLINK ANSWERING":
             if (now - time_digit_heard).total_seconds() > 8.0:
                 time_digit_heard = None
-                modem.connect_netlink(speed=57600,timeout=0.01,rtscts=False) #non-blocking version
+                modem.connect_netlink(speed=57600,timeout=0.01,rtscts=True) #non-blocking version
                 try:
-                    # modem.query_modem(b'\x61\x74\x25\x65\x30')
-                    modem.query_modem(b'AT%E0')
-                    modem.query_modem(b"AT\N3\V1%C0")
-                    modem.query_modem(b"at+ms=v32b,1,14400,14400,14400,14400")
-                    # modem.query_modem("AT&c1&d2s38=1")
+                    for init in saturn_inits:
+                        modem.query_modem(init)
                     modem.query_modem("ATA", timeout=120, response = "CONNECT")
                     mode = "NETLINK_CONNECTED"
                 except IOError:
