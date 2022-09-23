@@ -26,8 +26,10 @@ dataSplit = b"<dataSplit>"
 printout = False
 if 'printout' in sys.argv:
     printout = True
+timeout = 0.003
 data = []
 state = "starting"
+poll_rate = 0.01
 ser = ""
 
 def digit_parser(modem):
@@ -220,6 +222,11 @@ def netlink_exchange(side,net_state,opponent):
                     raw_input = ser.read(ser.in_waiting)
                 if b"NO CARRIER" in raw_input:
                     logger.info("NO CARRIER")
+                    # ser.write(("ATs86?\r\n").encode())
+                    # response = ser.readline().strip()
+                    # if len(response) == 0:
+                    #     response = ser.readline().strip()
+                    # print(response)
                     state = "netlink_disconnected"
                     time.sleep(1)
                     udp.close()

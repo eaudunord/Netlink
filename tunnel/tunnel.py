@@ -37,10 +37,8 @@ def updater():
                 optIn = "no"
                 pythonVer = platform.python_version_tuple()[0]
                 if pythonVer == '2':
-                    print('python 2')
                     optIn = raw_input('Update for %s available. Press enter to download or type no to skip >>' % script)
                 else:
-                    print('python 3')
                     optIn = input('Update for %s available. Press enter to download or type no to skip >>' % script)
                 if "no" in optIn.lower():
                     continue
@@ -64,7 +62,6 @@ updater()
 
 import netlink
 from modemClass import Modem
-from modem_inits import saturn_inits
 
 
 def com_scanner():
