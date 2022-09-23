@@ -7,7 +7,7 @@ import time
 logging.basicConfig(level=logging.INFO)
 import serial
 import requests
-import six
+import platform
 com_port = None
 logger = logging.getLogger('dreampi')
 
@@ -34,11 +34,19 @@ def updater():
             if upstream_version == local_version:
                 print('%s Up To Date' % script)
             else:
-                optIn = six.moves.input('Update for %s available. Press enter to download or type no to skip >>' % script)
+                optIn = "no"
+                pythonVer = platform.python_version_tuple()[0]
+                if pythonVer == '2':
+                    print('python 2')
+                    optIn = raw_input('Update for %s available. Press enter to download or type no to skip >>' % script)
+                else:
+                    print('python 3')
+                    optIn = input('Update for %s available. Press enter to download or type no to skip >>' % script)
                 if "no" in optIn.lower():
                     continue
                 #make a handler for a bad request so bad data doesn't overwrite our local file
                 r = requests.get(url)
+                r.raise_for_status()
                 with open(script,'wb') as f:
                     f.write(r.content)
                 print('%s Updated' % script)
@@ -57,17 +65,6 @@ updater()
 import netlink
 from modemClass import Modem
 from modem_inits import saturn_inits
-
-# with open("modemClass.py",'rb') as f:
-# 	for line in f:
-# 		if b'_version' in line:
-# 			version = line.decode().split('version=')[1]
-# 			print(version)
-# 			break
-
-# r = requests.get(url)
-# with open("modemClass.py",'wb') as f:
-# 	f.write(r.content)
 
 
 def com_scanner():
@@ -167,8 +164,8 @@ def process():
                 time_digit_heard = None
                 modem.connect_netlink(speed=57600,timeout=0.01,rtscts=True) #non-blocking version
                 try:
-                    for init in saturn_inits:
-                        modem.query_modem(init)
+                    modem.query_modem(b'AT%E0')
+                    modem.query_modem(b"AT\N3\V1%C0")
                     modem.query_modem("ATA", timeout=120, response = "CONNECT")
                     mode = "NETLINK_CONNECTED"
                 except IOError:
