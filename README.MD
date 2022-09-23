@@ -1,6 +1,6 @@
 An internet tunneler for connecting Netlink and Xband games
 
-v4.2-beta is the latest tested as working online
+v4.3-beta is the latest tested as working online
 
 This can be integrated into Dreampi to add Netlink support. See the releases for the required updated scripts or visit Sega Saturn Shiro! Discord for additional help.
 
