@@ -92,50 +92,57 @@ def initConnection(ms,dial_string):
 
     if ms == "waiting":
         logger.info("I'm waiting")
+        timerStart = time.time()
         PORT = 65432
         tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         tcp.settimeout(120)
         tcp.bind(('', PORT))
         tcp.listen(5)
-        ready = select.select([tcp], [], [])
-        if ready[0]:
-            conn, addr = tcp.accept()
-            opponent = addr[0]
-            logger.info('connection from %s' % opponent)
-            while True:
-                try:
-                    data = conn.recv(1024)
-                except socket.error: #first try can return no payload
-                    continue
-                if data == b'readyip':
-                    conn.sendall(b'g2gip')
-                    logger.info("Sending Ring")
-                    ser.write(("RING\r\n").encode())
-                    ser.write(("CONNECT\r\n").encode())
-                    logger.info("Ready for Data Exchange!")
-                    #tcp.shutdown(socket.SHUT_RDWR) #best practice is to close your socket, but it gives me issues.
-                    #tcp.close()
-                    return ["connected",opponent]
-                if not data:
-                    print("failed to init")
-                    #tcp.shutdown(socket.SHUT_RDWR)
-                    #tcp.close()
-                    break
+        while True:
+            if time.time() - timerStart > 120:
+                return ["failed",""]
+            ready = select.select([tcp], [], [],0)
+            if ready[0]:
+                conn, addr = tcp.accept()
+                opponent = addr[0]
+                logger.info('connection from %s' % opponent)
+                while True:
+                    try:
+                        data = conn.recv(1024)
+                    except socket.error: #first try can return no payload
+                        continue
+                    if data == b'readyip':
+                        conn.sendall(b'g2gip')
+                        logger.info("Sending Ring")
+                        ser.write(("RING\r\n").encode())
+                        ser.write(("CONNECT\r\n").encode())
+                        logger.info("Ready for Data Exchange!")
+                        #tcp.shutdown(socket.SHUT_RDWR) #best practice is to close your socket, but it gives me issues.
+                        #tcp.close()
+                        return ["connected",opponent]
+                    if not data:
+                        print("failed to init")
+                        #tcp.shutdown(socket.SHUT_RDWR)
+                        #tcp.close()
+                        break
     if ms == "calling":
         logger.info("I'm calling")
         PORT = 65432
         tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         tcp.settimeout(120)
-        tcp.connect((opponent, PORT))
-        tcp.sendall(b"readyip")
-        ready = select.select([tcp], [], [])
-        if ready[0]:
-            data = tcp.recv(1024)
-            if data == b'g2gip':
-                logger.info("Ready for Data Exchange!")
-                #tcp.shutdown(socket.SHUT_RDWR)
-                #tcp.close()
-                return ["connected",opponent]
+        try:
+            tcp.connect((opponent, PORT))
+            tcp.sendall(b"readyip")
+            ready = select.select([tcp], [], [])
+            if ready[0]:
+                data = tcp.recv(1024)
+                if data == b'g2gip':
+                    logger.info("Ready for Data Exchange!")
+                    #tcp.shutdown(socket.SHUT_RDWR)
+                    #tcp.close()
+                    return ["connected",opponent]
+        except socket.error:
+            return ["failed", ""]
                 
     else:
         return ["error","error"]

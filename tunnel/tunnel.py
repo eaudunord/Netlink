@@ -109,6 +109,8 @@ modem = Modem(device_and_speed[0], device_and_speed[1])
 def do_netlink(side,dial_string,modem):
     # ser = serial.Serial(device_and_speed[0], device_and_speed[1], timeout=0.02)
     state, opponent  = netlink.netlink_setup(side,dial_string,modem)
+    if state == "failed":
+        return
     netlink.netlink_exchange(side,state,opponent)
 
 
