@@ -1,4 +1,4 @@
-#tunnel_version=1663872260.57
+#tunnel_version=1663970081.4484613
 import sys
 import os
 from datetime import datetime
@@ -165,6 +165,7 @@ def process():
                 try:
                     modem.query_modem(b'AT%E0')
                     modem.query_modem(b"AT\N3\V1%C0")
+                    modem.query_modem(b'AT+MS=V32b,1,14400,14400,14400,14400')
                     modem.query_modem("ATA", timeout=120, response = "CONNECT")
                     mode = "NETLINK_CONNECTED"
                 except IOError:
