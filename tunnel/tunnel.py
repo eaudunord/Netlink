@@ -15,7 +15,7 @@ logger = logging.getLogger('dreampi')
 
 def updater():
     base_script_url = "https://raw.githubusercontent.com/eaudunord/Netlink/latest/tunnel/"
-    checkScripts = ['modemClass.py','tunnel.py','netlink.py','modem_inits.py']
+    checkScripts = ['modemClass.py','tunnel.py','netlink.py']
     restartFlag = False
     for script in checkScripts:
         url = base_script_url+script
