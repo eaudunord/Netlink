@@ -1,4 +1,4 @@
-#tunnel_version=1663970081.4484613
+#tunnel_version=1663983944.323452
 import sys
 import os
 from datetime import datetime
@@ -110,6 +110,11 @@ def do_netlink(side,dial_string,modem):
     # ser = serial.Serial(device_and_speed[0], device_and_speed[1], timeout=0.02)
     state, opponent  = netlink.netlink_setup(side,dial_string,modem)
     if state == "failed":
+        for i in range(3):
+            modem._serial.write(b'+')
+            time.sleep(0.2)
+        time.sleep(4)
+        modem.send_command('ATH0')
         return
     netlink.netlink_exchange(side,state,opponent)
 
