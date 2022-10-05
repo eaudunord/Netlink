@@ -218,45 +218,36 @@ def netlink_exchange(side,net_state,opponent):
         last = 0
         sequence = 0
         packets = []
-        
+        ser.timeout = 0
         while(state != "netlink_disconnected"):
-            if ser.in_waiting > 0:
-                if first_run == True:
-                    raw_input = ser.read(1024) #crude buffer empty
-                    first_run = False
-                    raw_input = ser.read(ser.in_waiting)
-                else:
-                    raw_input = ser.read(ser.in_waiting)
-                if b"NO CARRIER" in raw_input:
-                    logger.info("NO CARRIER")
-                    # ser.write(("ATs86?\r\n").encode())
-                    # response = ser.readline().strip()
-                    # if len(response) == 0:
-                    #     response = ser.readline().strip()
-                    # print(response)
-                    state = "netlink_disconnected"
-                    time.sleep(1)
-                    udp.close()
-                    logger.info("sender stopped")
-                    return
-                
-                try:
-                    payload = raw_input
-                    seq = str(sequence)
-                    if len(payload)>0:
+            new = ser.read(1) #should now block until data. Attempt to reduce CPU usage.
+            
+            raw_input = new + ser.read(ser.in_waiting)
+            if b"NO CARRIER" in raw_input:
+                logger.info("NO CARRIER")
+                state = "netlink_disconnected"
+                time.sleep(1)
+                udp.close()
+                logger.info("sender stopped")
+                return
+            
+            try:
+                payload = raw_input
+                seq = str(sequence)
+                if len(payload)>0:
+                    
+                    packets.insert(0,(payload+dataSplit+seq.encode()))
+                    if(len(packets) > 5):
+                        packets.pop()
                         
-                        packets.insert(0,(payload+dataSplit+seq.encode()))
-                        if(len(packets) > 5):
-                            packets.pop()
-                            
-                        for i in range(2): #send the data twice. May help with drops or latency    
-                            ready = select.select([],[udp],[]) #blocking select  
-                            if ready[1]:
-                                udp.sendto(packetSplit.join(packets), (opponent,oppPort))
-                                    
-                        sequence+=1
-                except:
-                    continue
+                    for i in range(2): #send the data twice. May help with drops or latency    
+                        ready = select.select([],[udp],[]) #blocking select  
+                        if ready[1]:
+                            udp.sendto(packetSplit.join(packets), (opponent,oppPort))
+                                
+                    sequence+=1
+            except:
+                continue
 
     global state 
     state = net_state              
