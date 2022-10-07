@@ -2,18 +2,21 @@ import socket
 import time
 import select
 import threading
+import sys
 from random import randint
-from multiprocessing import Process, Queue, Pool, Manager
+from multiprocessing import Queue
 
 latency = 0
 jitter = False
 
+numThreads = 10
+threads = []
 
 
 
 
 
-def tcp_forwarder(conn,connected):
+def tcp_forwarder(conn,connected): #single thread
     tcp_fwd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         #data = conn.recv(1024)
@@ -36,17 +39,18 @@ def tcp_forwarder(conn,connected):
             if data == b'g2gip':
                 return
 
-def udp_sender(q2):
+def udp_sender(q2): #single thread
+    print("UDP Sender Started")
     while True:
         if not q2.empty():
             r = q2.get()
             if r is None:
-                break
+                return
             data, opponent, port = r
             udp3.sendto(data,(opponent,port))
             
 
-def udp_forwarder(q,q2):
+def udp_forwarder(q,q2): #run multiple threads of this function
     while True:
         if not q.empty():
             r = q.get()
@@ -54,19 +58,23 @@ def udp_forwarder(q,q2):
             if jitter:
                 time.sleep(randint(15)*.001)
             if r is None:
+                time.sleep(2)
                 q2.put(r)
-                break
+                return
             q2.put(r)
         
 
 
-def udp_listener(q):
+def udp_listener(q): #single thread
     timeout = 90
     ts = time.time()
     while True:
         if time.time() - ts > timeout:
+            for i in range(numThreads-1):
                 q.put(None)
-                return
+            time.sleep(2)
+            q.put(None)
+            return
         ready1 = select.select([udp1], [], [],0)
         ready2 = select.select([udp2], [], [],0)
         if ready1[0]:
@@ -111,20 +119,95 @@ if __name__ == '__main__':
     udp2.bind(('', 20002))
     udp3 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-    m=Manager()
-    q=m.Queue()
-    m2 = Manager()
-    q2 = m2.Queue()
+def process():
+    q = Queue()
+    q2 = Queue()
+
     conn, connected = startup()
     print('connection from %s' % connected)
     tcp_forwarder(conn,connected)
     t1 = threading.Thread(target=udp_listener, args=(q,))
     t2 = threading.Thread(target=udp_sender, args=(q2,))
-    p=Pool()
-    p.map(udp_forwarder,(q,q2))
+    
     t1.start()
     t2.start()
+    for i in range(numThreads):
+        thread = threading.Thread(target = udp_forwarder, args=(q,q2))
+        thread.start()
+        threads.append(thread)
     t1.join()
+    for thread in threads:
+        thread.join()
     t2.join()
-    p.close()
-    p.join()
+
+while True:
+    try:
+        process()
+    except KeyboardInterrupt:
+        sys.exit()
+
+# #based on this working test
+# import threading
+# import time
+# from multiprocessing import Queue
+# import sys
+
+
+# numThreads = 4
+# def writer(q):
+#     for i in range(30):
+#         time.sleep(1)
+#         message = f'I am message {i}'
+#         q.put(message)
+#     for i in range(numThreads-1):
+#         q.put(None)
+#     time.sleep(2)
+#     q.put(None)
+
+# def reader(q,q2):
+#     while True:
+#         if not q.empty():
+#             item = q.get()
+#             if item == None:
+#                 time.sleep(2)
+#                 q2.put(item)
+#                 return
+#             time.sleep(1)
+#             q2.put(item)
+            
+
+# def sender(q2):
+#     while True:
+#         if not q2.empty():
+#             item = q2.get()
+#             if item == None:
+#                 return
+#             print(item)
+
+# def process():
+#     q = Queue()
+#     q2 = Queue()
+#     t1 = threading.Thread(target=writer, args=(q,))
+#     t1.start()
+#     t2 = threading.Thread(target = sender, args=(q2,))
+#     t2.start()
+
+#     threads = []
+#     for i in range(numThreads):
+#         thread = threading.Thread(target = reader, args=(q,q2))
+#         thread.start()
+#         threads.append(thread)
+
+#     t1.join()
+#     for thread in threads:
+#         thread.join()
+#     t2.join()
+
+# while True:
+#     try:
+#         process()
+#     except KeyboardInterrupt:
+#         sys.exit()
+
+
+    
