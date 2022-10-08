@@ -129,7 +129,7 @@ def initConnection(ms,dial_string):
         logger.info("I'm calling")
         PORT = 65432
         tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        tcp.settimeout(120)
+        tcp.settimeout(15)
         try:
             tcp.connect((opponent, PORT))
             tcp.sendall(b"readyip")

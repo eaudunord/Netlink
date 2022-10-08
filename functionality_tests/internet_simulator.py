@@ -4,12 +4,12 @@ import select
 import threading
 import sys
 from random import randint
-from multiprocessing import Queue
+from multiprocessing import Queue, Process
 
-latency = 0
-jitter = False
+latency = 0.0
+jitter = True
 
-numThreads = 10
+numThreads = 16
 threads = []
 
 
@@ -56,7 +56,7 @@ def udp_forwarder(q,q2): #run multiple threads of this function
             r = q.get()
             time.sleep(latency)
             if jitter:
-                time.sleep(randint(15)*.001)
+                time.sleep(randint(0,15)*.001)
             if r is None:
                 time.sleep(2)
                 q2.put(r)
@@ -66,7 +66,7 @@ def udp_forwarder(q,q2): #run multiple threads of this function
 
 
 def udp_listener(q): #single thread
-    timeout = 90
+    timeout = 45
     ts = time.time()
     while True:
         if time.time() - ts > timeout:
@@ -119,32 +119,39 @@ if __name__ == '__main__':
     udp2.bind(('', 20002))
     udp3 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-def process():
-    q = Queue()
-    q2 = Queue()
 
-    conn, connected = startup()
-    print('connection from %s' % connected)
-    tcp_forwarder(conn,connected)
-    t1 = threading.Thread(target=udp_listener, args=(q,))
-    t2 = threading.Thread(target=udp_sender, args=(q2,))
     
-    t1.start()
-    t2.start()
-    for i in range(numThreads):
-        thread = threading.Thread(target = udp_forwarder, args=(q,q2))
-        thread.start()
-        threads.append(thread)
-    t1.join()
-    for thread in threads:
-        thread.join()
-    t2.join()
 
-while True:
-    try:
-        process()
-    except KeyboardInterrupt:
-        sys.exit()
+    def process():
+        q = Queue()
+        q2 = Queue()
+
+        conn, connected = startup()
+        print('connection from %s' % connected)
+        tcp_forwarder(conn,connected)
+        t1 = threading.Thread(target=udp_listener, args=(q,))
+        t2 = threading.Thread(target=udp_sender, args=(q2,))
+
+        # t1 = Process(target=udp_listener, args=(q,))
+        # t2 = Process(target=udp_sender, args=(q2,))
+        
+        t1.start()
+        t2.start()
+        for i in range(numThreads):
+            # thread = threading.Thread(target = udp_forwarder, args=(q,q2))
+            thread = Process(target = udp_forwarder, args=(q,q2))
+            thread.start()
+            threads.append(thread)
+        t1.join()
+        for thread in threads:
+            thread.join()
+        t2.join()
+
+    while True:
+        try:
+            process()
+        except KeyboardInterrupt:
+            sys.exit()
 
 # #based on this working test
 # import threading
