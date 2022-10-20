@@ -8,10 +8,13 @@ logging.basicConfig(level=logging.INFO)
 import serial
 import requests
 import platform
+import socket
+import errno
+import select
 com_port = None
 logger = logging.getLogger('dreampi')
 
-
+xbandnums = ["18002071194","19209492263","0120717360","0355703001"]
 
 def updater():
     base_script_url = "https://raw.githubusercontent.com/eaudunord/Netlink/latest/tunnel/"
@@ -149,6 +152,10 @@ def process():
 
 
                         logger.info("Heard: %s" % dial_string)
+                        if dial_string in xbandnums:
+                            logger.info("Incoming call from Xband")
+                            client = "xband"
+                            mode = "XBAND ANSWERING"
                         if client == "direct_dial":
                             mode = "NETLINK ANSWERING"
                         else:
@@ -157,12 +164,14 @@ def process():
                         time_digit_heard = now
                 except (TypeError, ValueError):
                     pass
-        elif mode == "ANSWERING":
+        elif mode == "XBAND ANSWERING":
             if (now - time_digit_heard).total_seconds() > 8.0:
                 time_digit_heard = None
-                modem.answer()
-                modem.disconnect()
-                mode = "CONNECTED"
+                modem.query_modem("ATA", timeout=120, response = "CONNECT")
+                xbandServer(modem)
+                mode = "LISTENING"
+                modem.connect()
+                modem.start_dial_tone()
         elif mode == "NETLINK ANSWERING":
             if (now - time_digit_heard).total_seconds() > 8.0:
                 time_digit_heard = None
@@ -193,6 +202,56 @@ def process():
             mode = "LISTENING"
             modem.connect()
             modem.start_dial_tone()
+
+def xbandServer(modem):
+    modem._serial.timeout = 0.1
+    logger.info("connecting to retrocomputing.network")
+    s = socket.socket()
+    s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    s.setblocking(False)
+    s.settimeout(15)
+    s.connect(("xbserver.retrocomputing.network", 56969))
+    hwid = b"0000000000000000"
+    sdata = b"///////PI-" + hwid + b"\x0a"
+    sentid = 0
+    logger.info("connected")
+    while True:
+        try:
+            ready = select.select([s], [], [],0)
+            if ready[0]:
+                data = s.recv(1024)
+            if sentid == 0:
+                s.send(sdata)
+                sentid = 1
+            if data:
+                modem._serial.write(data)
+        except socket.error as e:
+            err = e.args[0]
+            if err == errno.EAGAIN or err == errno.EWOULDBLOCK:
+                time.sleep(0.1)
+            else:
+                logger.warn("tcp connection dropped")
+                break
+        if not modem._serial.cd:
+            logger.info("CD is not asserted")
+            time.sleep(2.0)
+            if not modem._serial.cd:
+                logger.info("CD still not asserted after 2 sec - xband hung up")
+                for i in range(3):
+                    modem._serial.write(b'+')
+                    time.sleep(0.2)
+                time.sleep(4)
+                modem.send_command('ATH0')
+                s.close()
+                logger.info("Xband disconnected. Back to listening")
+                return
+        if modem._serial.in_waiting:
+            data2 = modem._serial.read(1024)
+        if data2:
+            if sentid == 1:
+                s.send(data2) #catch errors here pls
+
+    
 
 if __name__ == "__main__":
     process()
