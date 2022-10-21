@@ -7,3 +7,4 @@ releases/
 versions/
 tunnel/errors_dumps/
 connector_send_rcv.py
+functionality_tests/logs/
