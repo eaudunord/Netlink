@@ -66,7 +66,7 @@ class Modem(object):
         self.send_command("ATZ0")  # Send reset command
         time.sleep(1)
         self.send_command("AT&F0")
-        self.send_command("ATE0")  # Don't echo our responses
+        self.send_command("ATE0W2")  # Don't echo our responses
 
     def start_dial_tone(self):
         if not self._dial_tone_wav:
@@ -186,3 +186,17 @@ class Modem(object):
                     self._dial_tone_counter = 0
                 self._serial.write(byte)
                 self._time_since_last_dial_tone = now
+
+    def answer_netlink(self):
+        self.connect_netlink(speed=57600,timeout=0.01,rtscts=True) #non-blocking version
+        self.query_modem(b'AT%E0')
+        self.query_modem(b"AT\N3\V1%C0")
+        self.query_modem(b'AT+MS=V32b,1,14400,14400,14400,14400')
+        self.query_modem("ATA", timeout=120, response = "CONNECT")
+        
+    def answer_xband(self):
+        self.connect_netlink(speed=57600,timeout=0.05,rtscts=True)
+        self.query_modem(b'AT%E0')
+        self.query_modem(b"AT\V1%C0")
+        self.query_modem(b'AT+MS=V22b')
+        self.query_modem("ATA", timeout=120, response = "CONNECT")

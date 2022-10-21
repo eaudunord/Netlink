@@ -11,6 +11,9 @@ import platform
 import socket
 import errno
 import select
+from xband_config import my_ip
+from xband_config import opponent_ip
+import sip_ring
 com_port = None
 logger = logging.getLogger('dreampi')
 
@@ -128,6 +131,12 @@ def process():
     modem.connect()
     modem.start_dial_tone()
 
+    PORT = 65433
+    sock_listen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock_listen.settimeout(120)
+    sock_listen.bind(('', PORT))
+    sock_listen.listen(5)
+
     time_digit_heard = None
     while True:
 
@@ -135,6 +144,34 @@ def process():
 
         if mode == "LISTENING":
             modem.update()
+            
+            ready = select.select([sock_listen], [], [],0)
+            if ready[0]:
+                conn, addr = sock_listen.accept()
+                opponent = addr[0]
+                while True:
+                    try:
+                        data = conn.recv(1024)
+                    except socket.error: #first try can return no payload
+                        continue
+                    if data == b"RING":
+                        conn.sendall(b'OK')
+                        modem.stop_dial_tone()
+                        time_digit_heard = now
+                        modem.connect_netlink(speed=57600,timeout=0.05,rtscts=True)
+                        modem.query_modem(b'AT%E0')
+                        modem.query_modem(b"AT\V1%C0")
+                        modem.query_modem(b'AT+MS=V22b')
+                        modem.query_modem("ATD", timeout=120, response = "CONNECT")
+                        do_netlink("waiting","000",modem)
+                        logger.info("Xband Disconnected")
+                        mode = "LISTENING"
+                        modem.connect()
+                        modem.start_dial_tone()
+                        break
+
+
+
             char = modem._serial.read(1).strip().decode()
             if not char:
                 continue
@@ -156,6 +193,13 @@ def process():
                             logger.info("Incoming call from Xband")
                             client = "xband"
                             mode = "XBAND ANSWERING"
+                        if dial_string not in xbandnums:
+                            client = "xband"
+                            mode = "NETLINK ANSWERING"
+                            side = "calling"
+                            dial_string = ringPhone()
+                            time.sleep(4)
+
                         if client == "direct_dial":
                             mode = "NETLINK ANSWERING"
                         if client == "ppp_internet":
@@ -178,12 +222,11 @@ def process():
         elif mode == "NETLINK ANSWERING":
             if (now - time_digit_heard).total_seconds() > 8.0:
                 time_digit_heard = None
-                modem.connect_netlink(speed=57600,timeout=0.01,rtscts=True) #non-blocking version
                 try:
-                    modem.query_modem(b'AT%E0')
-                    modem.query_modem(b"AT\N3\V1%C0")
-                    modem.query_modem(b'AT+MS=V32b,1,14400,14400,14400,14400')
-                    modem.query_modem("ATA", timeout=120, response = "CONNECT")
+                    if client == "xband":
+                        modem.answer_xband()
+                    else:
+                        modem.answer_netlink() #non-blocking version
                     mode = "NETLINK_CONNECTED"
                 except IOError:
                     modem.connect()
@@ -266,6 +309,27 @@ def xbandServer(modem):
     logger.info("Xband disconnected. Back to listening")
     return
 
+def ringPhone():
+    opponent = opponent_ip
+    PORT = 65433
+    sock_send = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock_send.settimeout(15)
+    sip = sip_ring.SIP('user','',opponent,4000,local_ip = my_ip,local_port=4000)
+    sip.call('11',3)
+    # sip = femtosip.SIP(user, password, gateway, port, display_name)
+    # sip.call(call, delay)
+
+    try:
+        sock_send.connect((opponent, PORT))
+        sock_send.sendall(b"RING")
+        ready = select.select([sock_send], [], [])
+        if ready[0]:
+            data = sock_send.recv(1024)
+            if data == b'OK':
+                return opponent
+
+    except socket.error:
+        return "error"
     
 
 if __name__ == "__main__":

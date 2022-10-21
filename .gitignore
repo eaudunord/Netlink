@@ -8,3 +8,5 @@ versions/
 tunnel/errors_dumps/
 connector_send_rcv.py
 functionality_tests/logs/
+xband_config.py
+sip_ring.py

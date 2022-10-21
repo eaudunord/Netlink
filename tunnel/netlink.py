@@ -56,6 +56,9 @@ def digit_parser(modem):
         #at this point we have the full dialed string. We can insert an IP address lookup here. For now, assume PPP
         if dial_string == "0":
             return {'client':'direct_dial','dial_string':dial_string,'side':'waiting'}
+        if dial_string == "70":
+            logger.info("Call waiting disabled")
+            return "nada"
         else:
             return {'client':'ppp_internet','dial_string':dial_string,'side':'na'}
 
@@ -116,9 +119,11 @@ def initConnection(ms,dial_string):
                         continue
                     if data == b'readyip':
                         conn.sendall(b'g2gip')
-                        logger.info("Sending Ring")
-                        ser.write(("RING\r\n").encode())
-                        ser.write(("CONNECT\r\n").encode())
+                        
+                        if dial_string != "000":
+                            logger.info("Sending Ring")
+                            ser.write(("RING\r\n").encode())
+                            ser.write(("CONNECT\r\n").encode())
                         logger.info("Ready for Data Exchange!")
                         #tcp.shutdown(socket.SHUT_RDWR) #best practice is to close your socket, but it gives me issues.
                         #tcp.close()
