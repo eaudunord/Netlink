@@ -66,7 +66,7 @@ class Modem(object):
         self.send_command("ATZ0")  # Send reset command
         time.sleep(1)
         self.send_command("AT&F0")
-        self.send_command("ATE0W2")  # Don't echo our responses
+        self.send_command("ATE0")  # Don't echo our responses
 
     def start_dial_tone(self):
         if not self._dial_tone_wav:

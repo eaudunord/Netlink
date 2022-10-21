@@ -7,7 +7,8 @@ from random import randint
 from multiprocessing import Queue, Process
 
 latency = 0.0
-jitter = True
+jitter = False
+jitterSpike = False
 
 numThreads = 16
 threads = []
@@ -41,13 +42,26 @@ def tcp_forwarder(conn,connected): #single thread
 
 def udp_sender(q2): #single thread
     print("UDP Sender Started")
+    last1 = time.time()
+    last2 = time.time()
+    f = open('logs/20001Log.bin','wb')
     while True:
         if not q2.empty():
             r = q2.get()
             if r is None:
+                f.close()
                 return
             data, opponent, port = r
             udp3.sendto(data,(opponent,port))
+            if port == 20001:
+                delta1 = round((time.time() - last1),3)
+                last1 = time.time()
+                print(f'\rport 2001 delta: {delta1}',end='',flush=True)
+                f.write(str(delta1).encode()+b'\t'+data.split(b'<dataSplit>')[0]+b'\r\n')
+            # if port == 20002:
+            #     delta2 = time.time() - last2
+            #     last2 = time.time()
+            #     print(f'port 2002 delta: {delta2}')
             
 
 def udp_forwarder(q,q2): #run multiple threads of this function
@@ -57,6 +71,10 @@ def udp_forwarder(q,q2): #run multiple threads of this function
             time.sleep(latency)
             if jitter:
                 time.sleep(randint(0,15)*.001)
+            if jitterSpike:
+                num = randint(0,10)
+                if num == 7:
+                    time.sleep(0.02)
             if r is None:
                 time.sleep(2)
                 q2.put(r)

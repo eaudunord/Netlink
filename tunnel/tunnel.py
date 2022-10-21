@@ -158,15 +158,18 @@ def process():
                             mode = "XBAND ANSWERING"
                         if client == "direct_dial":
                             mode = "NETLINK ANSWERING"
-                        else:
+                        if client == "ppp_internet":
                             mode = "ANSWERING"
                         modem.stop_dial_tone()
                         time_digit_heard = now
+                        print("moving to answer")
                 except (TypeError, ValueError):
                     pass
         elif mode == "XBAND ANSWERING":
+            # print("xband answering")
             if (now - time_digit_heard).total_seconds() > 8.0:
                 time_digit_heard = None
+                print("Answering")
                 modem.query_modem("ATA", timeout=120, response = "CONNECT")
                 xbandServer(modem)
                 mode = "LISTENING"
@@ -202,29 +205,30 @@ def process():
             mode = "LISTENING"
             modem.connect()
             modem.start_dial_tone()
+        print(mode)
 
 def xbandServer(modem):
-    modem._serial.timeout = 0.1
+    modem._serial.timeout = 1
     logger.info("connecting to retrocomputing.network")
     s = socket.socket()
     s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
     s.setblocking(False)
     s.settimeout(15)
     s.connect(("xbserver.retrocomputing.network", 56969))
-    hwid = b"0000000000000000"
+    hwid = b"6464646464646464"
     sdata = b"///////PI-" + hwid + b"\x0a"
     sentid = 0
     logger.info("connected")
     while True:
         try:
-            ready = select.select([s], [], [],0)
+            ready = select.select([s], [], [],1)
             if ready[0]:
                 data = s.recv(1024)
+                print(data)
+                modem._serial.write(data)
             if sentid == 0:
                 s.send(sdata)
                 sentid = 1
-            if data:
-                modem._serial.write(data)
         except socket.error as e:
             err = e.args[0]
             if err == errno.EAGAIN or err == errno.EWOULDBLOCK:
@@ -237,19 +241,30 @@ def xbandServer(modem):
             time.sleep(2.0)
             if not modem._serial.cd:
                 logger.info("CD still not asserted after 2 sec - xband hung up")
-                for i in range(3):
-                    modem._serial.write(b'+')
-                    time.sleep(0.2)
-                time.sleep(4)
-                modem.send_command('ATH0')
-                s.close()
-                logger.info("Xband disconnected. Back to listening")
-                return
+                print(time.time())
+                line = b""
+                while True:
+                    new = modem._serial.read(modem._serial.in_waiting)
+                    line+=new
+                    if b"NO CARRIER" in line:
+                        print(time.time())
+                    break
+                break
+                
         if modem._serial.in_waiting:
             data2 = modem._serial.read(1024)
-        if data2:
+            print(data2)
             if sentid == 1:
                 s.send(data2) #catch errors here pls
+    
+    for i in range(3):
+        modem._serial.write(b'+')
+        time.sleep(0.2)
+    time.sleep(4)
+    modem.send_command('ATH0')
+    s.close()
+    logger.info("Xband disconnected. Back to listening")
+    return
 
     
 
