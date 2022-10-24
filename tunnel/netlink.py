@@ -17,7 +17,7 @@ import datetime
 import serial
 from datetime import datetime
 import logging
-logger = logging.getLogger('dreampi')
+logger = logging.getLogger('netlink')
 import threading
 import binascii
 import select
@@ -89,9 +89,6 @@ def digit_parser(modem):
 def initConnection(ms,dial_string):
     opponent = dial_string.replace('*','.')
     ip_set = opponent.split('.')
-    if len(ip_set) == 6:
-        ip_set = ip_set[1:5]
-        ms = "xband"
     for i,set in enumerate(ip_set): #socket connect doesn't like leading zeroes now
         fixed = str(int(set))
         ip_set[i] = fixed
@@ -136,6 +133,12 @@ def initConnection(ms,dial_string):
                         #tcp.shutdown(socket.SHUT_RDWR)
                         #tcp.close()
                         break
+            if dial_string == "000":
+                if ser.in_waiting > 0:
+                    xb = ser.read(ser.in_waiting)
+                    print(xb)
+                    ser.write(b'\xff')
+
     if ms == "calling":
         print(datetime.now(),"I'm calling")
         PORT = 65432
@@ -145,7 +148,7 @@ def initConnection(ms,dial_string):
             tcp.connect((opponent, PORT))
             tcp.sendall(b"readyip")
             print(datetime.now(),"started handshake")
-            ready = select.select([tcp], [], [])
+            ready = select.select([tcp], [], []) #blocking wait
             if ready[0]:
                 print(datetime.now(),"waiting to receive handshake response")
                 now = time.time()
@@ -158,7 +161,7 @@ def initConnection(ms,dial_string):
                             return ["failed", ""]
                         continue
                     print(datetime.now(),"received a response")
-                    print(data)
+                    # print(data)
                     if data == b'g2gip':
                         logger.info("Ready for Data Exchange!")
                         #tcp.shutdown(socket.SHUT_RDWR)

@@ -20,7 +20,7 @@ from xband_config import opponent_id
 from xband_config import local_port
 import sip_ring
 com_port = None
-logger = logging.getLogger('dreampi')
+logger = logging.getLogger('tunnel')
 
 xbandnums = ["18002071194","19209492263","0120717360","0355703001"]
 
@@ -69,7 +69,7 @@ def updater():
         print('Main script updated. Please restart the tunnel')
         sys.exit()
 
-updater()
+# updater()
 
 import netlink
 from modemClass import Modem
@@ -143,6 +143,8 @@ def process():
     sock_listen.listen(5)
 
     time_digit_heard = None
+
+    print(mode)
     while True:
 
         now = datetime.now()
@@ -201,13 +203,15 @@ def process():
                             logger.info("Incoming call from Xband")
                             client = "xband"
                             mode = "XBAND ANSWERING"
-                        if dial_string not in xbandnums:
+                        if dial_string == "11111111111":
                             client = "xband"
                             mode = "NETLINK ANSWERING"
                             side = "calling"
+                            print(datetime.now(), "Invoke ring function")
                             t1 = threading.Thread(target=ringPhone)
-                            t1.start()
+                            t1.start() #ring opponent's phone, but don't wait for function to finish before moving on.
                             # time.sleep(4)
+                            print(datetime.now(), "Ring invoked")
 
                         if client == "direct_dial":
                             mode = "NETLINK ANSWERING"
@@ -254,7 +258,7 @@ def process():
             mode = "LISTENING"
             modem.connect()
             modem.start_dial_tone()
-        print(mode)
+        # print(mode)
 
 def xbandServer(modem):
     modem._serial.timeout = 1
@@ -270,14 +274,13 @@ def xbandServer(modem):
     logger.info("connected")
     while True:
         try:
-            ready = select.select([s], [], [],1)
+            ready = select.select([s], [], [],0)
             if ready[0]:
                 data = s.recv(1024)
                 print(data)
                 modem._serial.write(data)
             if sentid == 0:
                 s.send(sdata)
-                time.sleep(1)
                 sentid = 1
         except socket.error as e:
             err = e.args[0]
@@ -290,14 +293,13 @@ def xbandServer(modem):
             logger.info("CD is not asserted")
             time.sleep(2.0)
             if not modem._serial.cd:
-                logger.info("CD still not asserted after 2 sec - xband hung up")
-                print(time.time())
+                logger.info(datetime.now(),"CD still not asserted after 2 sec - xband hung up")
                 line = b""
                 while True:
                     new = modem._serial.read(modem._serial.in_waiting)
                     line+=new
                     if b"NO CARRIER" in line:
-                        print(time.time())
+                        print(datetime.now(),"NO CARRIER")
                     break
                 break
         if sentid == 1:        
@@ -325,7 +327,7 @@ def ringPhone():
     PORT = 65433
     sock_send = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock_send.settimeout(15)
-    print("Calling opponent")
+    print(datetime.now(), "Calling opponent")
     # time.sleep(8)
     sip = sip_ring.SIP('user','',opponent,opponent_port,local_ip = my_ip,local_port=local_port)
     sip.call(opponent_id,3)
