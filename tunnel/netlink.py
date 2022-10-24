@@ -13,6 +13,7 @@ if __name__ == "__main__":
 
 import socket
 import time
+import datetime
 import serial
 from datetime import datetime
 import logging
@@ -98,6 +99,7 @@ def initConnection(ms,dial_string):
 
     if ms == "waiting":
         logger.info("I'm waiting")
+        print(datetime.now())
         timerStart = time.time()
         PORT = 65432
         tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -118,8 +120,9 @@ def initConnection(ms,dial_string):
                     except socket.error: #first try can return no payload
                         continue
                     if data == b'readyip':
+                        print(datetime.now(),"received handshake initiation")
                         conn.sendall(b'g2gip')
-                        
+                        print(datetime.now(),"sent handshake acknowledge")
                         if dial_string != "000":
                             logger.info("Sending Ring")
                             ser.write(("RING\r\n").encode())
@@ -134,22 +137,35 @@ def initConnection(ms,dial_string):
                         #tcp.close()
                         break
     if ms == "calling":
-        logger.info("I'm calling")
+        print(datetime.now(),"I'm calling")
         PORT = 65432
         tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         tcp.settimeout(15)
         try:
             tcp.connect((opponent, PORT))
             tcp.sendall(b"readyip")
+            print(datetime.now(),"started handshake")
             ready = select.select([tcp], [], [])
             if ready[0]:
-                data = tcp.recv(1024)
-                if data == b'g2gip':
-                    logger.info("Ready for Data Exchange!")
-                    #tcp.shutdown(socket.SHUT_RDWR)
-                    #tcp.close()
-                    return ["connected",opponent]
+                print(datetime.now(),"waiting to receive handshake response")
+                now = time.time()
+                while True:
+                    try:
+                        data = tcp.recv(1024)
+                    except socket.error: #first try can return no payload
+                        if time.time() - now > 15:
+                            print("failed with timeout")
+                            return ["failed", ""]
+                        continue
+                    print(datetime.now(),"received a response")
+                    print(data)
+                    if data == b'g2gip':
+                        logger.info("Ready for Data Exchange!")
+                        #tcp.shutdown(socket.SHUT_RDWR)
+                        #tcp.close()
+                        return ["connected",opponent]
         except socket.error:
+            print("failed")
             return ["failed", ""]
                 
     else:
@@ -175,46 +191,46 @@ def netlink_exchange(side,net_state,opponent):
         print(state)
         last = 0
         currentSequence = 0
-        #logging block
-        f = open("recv-output.txt", "a")
-        f.write("New output")
-        f.write("\n")
-        ts = round(time.time() * 10000)
-        lastTime = round(time.time() * 10000) - ts
-        #logging block
+        # #logging block
+        # f = open("recv-output.txt", "a")
+        # f.write("New output")
+        # f.write("\n")
+        # ts = round(time.time() * 10000)
+        # lastTime = round(time.time() * 10000) - ts
+        # #logging block
 
         while(state != "netlink_disconnected"):
             ready = select.select([udp],[],[],0) #polling select
             if ready[0]:
-                #logging block
-                currentTime = round(time.time() * 10000) - ts
-                f.write(str(currentTime))
-                f.write("\t")
-                f.write(str(max(currentTime - lastTime,0)))
-                f.write("\t")
-                #logging block
+                # #logging block
+                # currentTime = round(time.time() * 10000) - ts
+                # f.write(str(currentTime))
+                # f.write("\t")
+                # f.write(str(max(currentTime - lastTime,0)))
+                # f.write("\t")
+                # #logging block
 
                 packetSet = udp.recv(1024)
 
-                #logging block
-                currentTime = round(time.time() * 10000) - ts            
-                f.write(str(currentTime))
-                f.write("\t")
-                f.write(str(max(currentTime - lastTime,0)))
-                f.write("\t")
-                #logging block
+                # #logging block
+                # currentTime = round(time.time() * 10000) - ts            
+                # f.write(str(currentTime))
+                # f.write("\t")
+                # f.write(str(max(currentTime - lastTime,0)))
+                # f.write("\t")
+                # #logging block
 
                 packets= packetSet.split(packetSplit)
                 
-                #logging block
-                lastTime = currentTime
-                for p in packets:
-                    f.write(p.split(dataSplit)[1])
-                    f.write("-")          
-                    f.write(binascii.hexlify( p.split(dataSplit)[0] ))
-                    f.write("\t")        
-                f.write("\n")                        
-                #logging block
+                # #logging block
+                # lastTime = currentTime
+                # for p in packets:
+                #     f.write(p.split(dataSplit)[1])
+                #     f.write("-")          
+                #     f.write(binascii.hexlify( p.split(dataSplit)[0] ))
+                #     f.write("\t")        
+                # f.write("\n")                        
+                # #logging block
 
                 try:
                     while True:
@@ -239,7 +255,7 @@ def netlink_exchange(side,net_state,opponent):
                         currentSequence = int(sequence) + 1
                         
                         toSend = payload
-                        
+                        print("received:",toSend)
                         ser.write(toSend)
                         if len(payload) > 0 and printout == True:
                             logger.info(binascii.hexlify(payload))
@@ -250,11 +266,11 @@ def netlink_exchange(side,net_state,opponent):
                     continue
                     
         logger.info("listener stopped")  
-        f.close()    #logging  
+        # f.close()    #logging  
                 
     def sender(side,opponent):
         global state
-        logger.info("sending")
+        print(datetime.now(),"sending")
         first_run = False
         if side == "waiting":
             oppPort = 20002
@@ -263,13 +279,13 @@ def netlink_exchange(side,net_state,opponent):
         last = 0
         sequence = 0
 
-        #logging block
-        f = open("send-output.txt", "a")
-        f.write("New output")
-        f.write("\n")
-        ts = round(time.time() * 10000)
-        lastTime = round(time.time() * 10000) - ts
-        #logging block
+        # #logging block
+        # f = open("send-output.txt", "a")
+        # f.write("New output")
+        # f.write("\n")
+        # ts = round(time.time() * 10000)
+        # lastTime = round(time.time() * 10000) - ts
+        # #logging block
 
         packets = []
         ser.timeout = 0
@@ -277,13 +293,14 @@ def netlink_exchange(side,net_state,opponent):
             new = ser.read(1) #should now block until data. Attempt to reduce CPU usage.
             
             raw_input = new + ser.read(ser.in_waiting)
+            print("sent:", raw_input)
             if b"NO CARRIER" in raw_input:
-                logger.info("NO CARRIER")
+                print(datetime.now(),"NO CARRIER")
                 state = "netlink_disconnected"
                 time.sleep(1)
                 udp.close()
                 logger.info("sender stopped")
-                f.close() #logging
+                # f.close() #logging
                 return
             
             try:
@@ -294,39 +311,39 @@ def netlink_exchange(side,net_state,opponent):
                     packets.insert(0,(payload+dataSplit+seq.encode()))
                     if(len(packets) > 5):
                         packets.pop()
-                    #logging block
-                    currentTime = round(time.time() * 10000) - ts        
-                    f.write(str(currentTime))
-                    f.write("\t")
-                    f.write(str(max(currentTime - lastTime,0)))
-                    f.write("\t")
-                    lastTime = currentTime
-                    #logging block
+                    # #logging block
+                    # currentTime = round(time.time() * 10000) - ts        
+                    # f.write(str(currentTime))
+                    # f.write("\t")
+                    # f.write(str(max(currentTime - lastTime,0)))
+                    # f.write("\t")
+                    # lastTime = currentTime
+                    # #logging block
                     for i in range(2): #send the data twice. May help with drops or latency    
                         ready = select.select([],[udp],[]) #blocking select  
                         if ready[1]:
                             udp.sendto(packetSplit.join(packets), (opponent,oppPort))
-                            #logging block
-                            f.write("Success")
-                        else:
-                            f.write("Dropped") 
-                        currentTime = round(time.time() * 10000) - ts
-                        f.write("\t")
-                        f.write(str(currentTime))
-                        f.write("\t")
-                        f.write(str(max(currentTime - lastTime,0)))
+                        #     #logging block
+                        #     f.write("Success")
+                        # else:
+                        #     f.write("Dropped") 
+                        # currentTime = round(time.time() * 10000) - ts
+                        # f.write("\t")
+                        # f.write(str(currentTime))
+                        # f.write("\t")
+                        # f.write(str(max(currentTime - lastTime,0)))
                        
-                        lastTime = currentTime
+                        # lastTime = currentTime
                        
-                        for p in packets:
-                            f.write(p.split(dataSplit)[1])
-                            f.write("-")          
-                            f.write(binascii.hexlify( p.split(dataSplit)[0] ))
-                            f.write("\t")   
+                        # for p in packets:
+                        #     f.write(p.split(dataSplit)[1])
+                        #     f.write("-")          
+                        #     f.write(binascii.hexlify( p.split(dataSplit)[0] ))
+                        #     f.write("\t")   
                        
                         
-                        f.write("\n")       
-                         #logging block     
+                        # f.write("\n")       
+                        #  #logging block     
                     sequence+=1
             except:
                 continue

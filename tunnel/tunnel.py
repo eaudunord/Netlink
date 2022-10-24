@@ -9,10 +9,15 @@ import serial
 import requests
 import platform
 import socket
+import threading
 import errno
 import select
 from xband_config import my_ip
 from xband_config import opponent_ip
+from xband_config import cpu_id_spoof
+from xband_config import opponent_port
+from xband_config import opponent_id
+from xband_config import local_port
 import sip_ring
 com_port = None
 logger = logging.getLogger('dreampi')
@@ -147,6 +152,7 @@ def process():
             
             ready = select.select([sock_listen], [], [],0)
             if ready[0]:
+                print(datetime.now(), "incoming xband call")
                 conn, addr = sock_listen.accept()
                 opponent = addr[0]
                 while True:
@@ -162,7 +168,9 @@ def process():
                         modem.query_modem(b'AT%E0')
                         modem.query_modem(b"AT\V1%C0")
                         modem.query_modem(b'AT+MS=V22b')
-                        modem.query_modem("ATD", timeout=120, response = "CONNECT")
+                        time.sleep(2)
+                        modem.query_modem("ATX1D", timeout=120, response = "CONNECT")
+                        print(datetime.now(),"connected")
                         do_netlink("waiting","000",modem)
                         logger.info("Xband Disconnected")
                         mode = "LISTENING"
@@ -197,8 +205,9 @@ def process():
                             client = "xband"
                             mode = "NETLINK ANSWERING"
                             side = "calling"
-                            dial_string = ringPhone()
-                            time.sleep(4)
+                            t1 = threading.Thread(target=ringPhone)
+                            t1.start()
+                            # time.sleep(4)
 
                         if client == "direct_dial":
                             mode = "NETLINK ANSWERING"
@@ -206,32 +215,29 @@ def process():
                             mode = "ANSWERING"
                         modem.stop_dial_tone()
                         time_digit_heard = now
-                        print("moving to answer")
                 except (TypeError, ValueError):
                     pass
         elif mode == "XBAND ANSWERING":
             # print("xband answering")
             if (now - time_digit_heard).total_seconds() > 8.0:
                 time_digit_heard = None
-                print("Answering")
                 modem.query_modem("ATA", timeout=120, response = "CONNECT")
                 xbandServer(modem)
                 mode = "LISTENING"
                 modem.connect()
                 modem.start_dial_tone()
         elif mode == "NETLINK ANSWERING":
-            if (now - time_digit_heard).total_seconds() > 8.0:
-                time_digit_heard = None
-                try:
-                    if client == "xband":
-                        modem.answer_xband()
-                    else:
-                        modem.answer_netlink() #non-blocking version
-                    mode = "NETLINK_CONNECTED"
-                except IOError:
-                    modem.connect()
-                    mode = "LISTENING"
-                    modem.start_dial_tone()
+            time_digit_heard = None
+            try:
+                if client == "xband":
+                    modem.answer_xband()
+                else:
+                    modem.answer_netlink() #non-blocking version
+                mode = "NETLINK_CONNECTED"
+            except IOError:
+                modem.connect()
+                mode = "LISTENING"
+                modem.start_dial_tone()
 
 
         elif mode == "CONNECTED":
@@ -258,7 +264,7 @@ def xbandServer(modem):
     s.setblocking(False)
     s.settimeout(15)
     s.connect(("xbserver.retrocomputing.network", 56969))
-    hwid = b"6464646464646464"
+    hwid = cpu_id_spoof
     sdata = b"///////PI-" + hwid + b"\x0a"
     sentid = 0
     logger.info("connected")
@@ -271,6 +277,7 @@ def xbandServer(modem):
                 modem._serial.write(data)
             if sentid == 0:
                 s.send(sdata)
+                time.sleep(1)
                 sentid = 1
         except socket.error as e:
             err = e.args[0]
@@ -293,12 +300,16 @@ def xbandServer(modem):
                         print(time.time())
                     break
                 break
-                
-        if modem._serial.in_waiting:
-            data2 = modem._serial.read(1024)
-            print(data2)
-            if sentid == 1:
-                s.send(data2) #catch errors here pls
+        if sentid == 1:        
+            if modem._serial.in_waiting:
+                line = b""
+                while True:
+                    data2 = modem._serial.read(1)
+                    line += data2
+                    if b"\x10\x03" in line:
+                        print(line)
+                        s.send(line) #catch errors here pls
+                        break
     
     for i in range(3):
         modem._serial.write(b'+')
@@ -314,8 +325,10 @@ def ringPhone():
     PORT = 65433
     sock_send = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock_send.settimeout(15)
-    sip = sip_ring.SIP('user','',opponent,4000,local_ip = my_ip,local_port=4000)
-    sip.call('11',3)
+    print("Calling opponent")
+    # time.sleep(8)
+    sip = sip_ring.SIP('user','',opponent,opponent_port,local_ip = my_ip,local_port=local_port)
+    sip.call(opponent_id,3)
     # sip = femtosip.SIP(user, password, gateway, port, display_name)
     # sip.call(call, delay)
 
