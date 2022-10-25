@@ -162,23 +162,27 @@ def process():
                         data = conn.recv(1024)
                     except socket.error: #first try can return no payload
                         continue
-                    if data == b"RING":
-                        conn.sendall(b'OK')
+                    if data == b"RESET":
                         modem.stop_dial_tone()
                         time_digit_heard = now
                         modem.connect_netlink(speed=57600,timeout=0.05,rtscts=True)
                         modem.query_modem(b'AT%E0')
                         modem.query_modem(b"AT\V1%C0")
                         modem.query_modem(b'AT+MS=V22b')
-                        time.sleep(2)
-                        modem.query_modem("ATX1D", timeout=120, response = "CONNECT")
-                        print(datetime.now(),"connected")
-                        do_netlink("waiting","000",modem)
-                        logger.info("Xband Disconnected")
-                        mode = "LISTENING"
-                        modem.connect()
-                        modem.start_dial_tone()
-                        break
+                        conn.sendall(b'ACK RESET')
+                        # time.sleep(2)
+                        data = conn.recv(1024)
+                        if data == b"RING":
+                            time.sleep(2)
+                            conn.sendall(b'ANSWERING')
+                            modem.query_modem("ATX1D", timeout=120, response = "CONNECT")
+                            print(datetime.now(),"connected")
+                            netlink.netlink_exchange("waiting","connected",opponent)
+                            logger.info("Xband Disconnected")
+                            mode = "LISTENING"
+                            modem.connect()
+                            modem.start_dial_tone()
+                            break
 
 
 
@@ -207,11 +211,6 @@ def process():
                             client = "xband"
                             mode = "NETLINK ANSWERING"
                             side = "calling"
-                            print(datetime.now(), "Invoke ring function")
-                            t1 = threading.Thread(target=ringPhone)
-                            t1.start() #ring opponent's phone, but don't wait for function to finish before moving on.
-                            # time.sleep(4)
-                            print(datetime.now(), "Ring invoked")
 
                         if client == "direct_dial":
                             mode = "NETLINK ANSWERING"
@@ -234,7 +233,10 @@ def process():
             time_digit_heard = None
             try:
                 if client == "xband":
-                    modem.answer_xband()
+                    modem.init_xband()
+                    ringPhone()
+                    modem.query_modem("ATA", timeout=120, response = "CONNECT")
+                    print(datetime.now(),"connected")
                 else:
                     modem.answer_netlink() #non-blocking version
                 mode = "NETLINK_CONNECTED"
@@ -252,7 +254,10 @@ def process():
 
             
         elif mode == "NETLINK_CONNECTED":
-            do_netlink(side,dial_string,modem)
+            if client == "xband":
+                netlink.netlink_exchange("calling","connected",opponent_ip)
+            else:
+                do_netlink(side,dial_string,modem)
             logger.info("Netlink Disconnected")
             # time.sleep(5)
             mode = "LISTENING"
@@ -274,7 +279,7 @@ def xbandServer(modem):
     logger.info("connected")
     while True:
         try:
-            ready = select.select([s], [], [],0)
+            ready = select.select([s], [], [],0.3)
             if ready[0]:
                 data = s.recv(1024)
                 print(data)
@@ -290,17 +295,10 @@ def xbandServer(modem):
                 logger.warn("tcp connection dropped")
                 break
         if not modem._serial.cd:
-            logger.info("CD is not asserted")
+            logger.info("1: CD is not asserted")
             time.sleep(2.0)
             if not modem._serial.cd:
-                logger.info(datetime.now(),"CD still not asserted after 2 sec - xband hung up")
-                line = b""
-                while True:
-                    new = modem._serial.read(modem._serial.in_waiting)
-                    line+=new
-                    if b"NO CARRIER" in line:
-                        print(datetime.now(),"NO CARRIER")
-                    break
+                print(datetime.now(),"CD still not asserted after 2 sec - xband hung up")
                 break
         if sentid == 1:        
             if modem._serial.in_waiting:
@@ -310,14 +308,21 @@ def xbandServer(modem):
                     line += data2
                     if b"\x10\x03" in line:
                         print(line)
-                        s.send(line) #catch errors here pls
+                        s.send(line)
                         break
+                    if not modem._serial.cd:
+                        logger.info("2: CD is not asserted")
+                        time.sleep(2.0)
+                        if not modem._serial.cd:
+                            print(datetime.now(),"CD still not asserted after 2 sec - xband hung up")
+                            break
+        break
     
-    for i in range(3):
-        modem._serial.write(b'+')
-        time.sleep(0.2)
-    time.sleep(4)
-    modem.send_command('ATH0')
+    # for i in range(3):
+    #     modem._serial.write(b'+')
+    #     time.sleep(0.2)
+    # time.sleep(4)
+    # modem.send_command('ATH0')
     s.close()
     logger.info("Xband disconnected. Back to listening")
     return
@@ -329,19 +334,24 @@ def ringPhone():
     sock_send.settimeout(15)
     print(datetime.now(), "Calling opponent")
     # time.sleep(8)
-    sip = sip_ring.SIP('user','',opponent,opponent_port,local_ip = my_ip,local_port=local_port)
-    sip.call(opponent_id,3)
+    
     # sip = femtosip.SIP(user, password, gateway, port, display_name)
     # sip.call(call, delay)
 
     try:
         sock_send.connect((opponent, PORT))
-        sock_send.sendall(b"RING")
+        sock_send.sendall(b"RESET")
         ready = select.select([sock_send], [], [])
         if ready[0]:
             data = sock_send.recv(1024)
-            if data == b'OK':
-                return opponent
+            if data == b'ACK RESET':
+                sip = sip_ring.SIP('user','',opponent,opponent_port,local_ip = my_ip,local_port=local_port)
+                sip.call(opponent_id,3)
+                sock_send.sendall(b'RING')
+                data = sock_send.recv(1024)
+                if data == b'ANSWERING':
+                    print(datetime.now(), "Answering")
+                    return opponent
 
     except socket.error:
         return "error"

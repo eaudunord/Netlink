@@ -194,9 +194,9 @@ class Modem(object):
         self.query_modem(b'AT+MS=V32b,1,14400,14400,14400,14400')
         self.query_modem("ATA", timeout=120, response = "CONNECT")
         
-    def answer_xband(self):
+    def init_xband(self):
         self.connect_netlink(speed=57600,timeout=0.05,rtscts=True)
         self.query_modem(b'AT%E0')
         self.query_modem(b"AT\V1%C0")
         self.query_modem(b'AT+MS=V22b')
-        self.query_modem("ATA", timeout=120, response = "CONNECT")
+        

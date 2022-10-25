@@ -133,11 +133,6 @@ def initConnection(ms,dial_string):
                         #tcp.shutdown(socket.SHUT_RDWR)
                         #tcp.close()
                         break
-            if dial_string == "000":
-                if ser.in_waiting > 0:
-                    xb = ser.read(ser.in_waiting)
-                    print(xb)
-                    ser.write(b'\xff')
 
     if ms == "calling":
         print(datetime.now(),"I'm calling")
@@ -296,7 +291,9 @@ def netlink_exchange(side,net_state,opponent):
             new = ser.read(1) #should now block until data. Attempt to reduce CPU usage.
             
             raw_input = new + ser.read(ser.in_waiting)
-            print("sent:", raw_input)
+            
+
+
             if b"NO CARRIER" in raw_input:
                 print(datetime.now(),"NO CARRIER")
                 state = "netlink_disconnected"
@@ -305,6 +302,8 @@ def netlink_exchange(side,net_state,opponent):
                 logger.info("sender stopped")
                 # f.close() #logging
                 return
+                
+            print("sent:", raw_input)
             
             try:
                 payload = raw_input
