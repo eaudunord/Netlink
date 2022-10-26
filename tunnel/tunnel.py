@@ -158,29 +158,52 @@ def process():
                 conn, addr = sock_listen.accept()
                 opponent = addr[0]
                 while True:
-                    try:
+                    ready = select.select([conn], [], [],0)
+                    if ready[0]:
                         data = conn.recv(1024)
-                    except socket.error: #first try can return no payload
-                        continue
-                    if data == b"RESET":
-                        modem.stop_dial_tone()
-                        time_digit_heard = now
-                        modem.connect_netlink(speed=57600,timeout=0.05,rtscts=True)
-                        modem.query_modem(b'AT%E0')
-                        modem.query_modem(b"AT\V1%C0")
-                        modem.query_modem(b'AT+MS=V22b')
-                        conn.sendall(b'ACK RESET')
-                        # time.sleep(2)
-                        data = conn.recv(1024)
-                        if data == b"RING":
+                        if data == b"RESET":
+                            modem.stop_dial_tone()
+                            time_digit_heard = now
+                            modem.connect_netlink(speed=57600,timeout=0.05,rtscts=True)
+                            modem.query_modem(b'AT%E0')
+                            modem.query_modem(b"AT\V1%C0")
+                            modem.query_modem(b'AT+MS=V22b')
+                            conn.sendall(b'ACK RESET')
+                            # time.sleep(2)
+                        elif data == b"RING":
                             print(datetime.now(),"RING")
                             # time.sleep(4)
                             conn.sendall(b'ANSWERING')
                             time.sleep(6)
                             print(datetime.now(),'Answering')
                             modem.query_modem("ATX1D", timeout=120, response = "CONNECT")
-                            print(datetime.now(),"connected")
-                            netlink.netlink_exchange("waiting","connected",opponent,ser=modem._serial)
+                            print(datetime.now(),"CONNECTED")
+                        elif data == b"PING":
+                            conn.sendall(b'ACK PING')
+                            modem._serial.timeout=None
+                            modem._serial.write(b'\xff')
+                            while modem._serial.cd:
+                                char = modem._serial.read(1) #read through the buffer and skip all 0xff
+                                if char == b'\xff':
+                                    continue
+                                elif char == b'\x01':
+                                    # modem._serial.write(b'\x01')
+                                    conn.sendall(b'RESPONSE')
+                                    break
+                            if modem._serial.cd: #if we stayed connected
+                                continue
+                                
+                            elif not modem._serial.cd: #if we dropped the call
+                                logger.info("Xband Disconnected")
+                                mode = "LISTENING"
+                                modem.connect()
+                                modem.start_dial_tone()
+                                break
+                            
+                        elif data == b'RESPONSE':
+                            modem._serial.write(b'\x01')
+                            if modem._serial.cd:
+                                netlink.netlink_exchange("waiting","connected",opponent,ser=modem._serial)
                             logger.info("Xband Disconnected")
                             mode = "LISTENING"
                             modem.connect()
@@ -210,14 +233,14 @@ def process():
                             logger.info("Incoming call from Xband")
                             client = "xband"
                             mode = "XBAND ANSWERING"
-                        if dial_string == "11111111111":
+                        elif dial_string == "11111111111":
                             client = "xband"
                             mode = "NETLINK ANSWERING"
                             side = "calling"
 
-                        if client == "direct_dial":
+                        elif client == "direct_dial":
                             mode = "NETLINK ANSWERING"
-                        if client == "ppp_internet":
+                        elif client == "ppp_internet":
                             mode = "ANSWERING"
                         modem.stop_dial_tone()
                         time_digit_heard = now
@@ -237,12 +260,17 @@ def process():
             try:
                 if client == "xband":
                     modem.init_xband()
-                    ringPhone()
-                    modem.query_modem("ATA", timeout=120, response = "CONNECT")
-                    print(datetime.now(),"connected")
+                    result = ringPhone()
+                    if result == "hangup":
+                        mode = "LISTENING"
+                        modem.connect()
+                        modem.start_dial_tone()
+                    else:
+                        mode = "NETLINK_CONNECTED"
+
                 else:
-                    modem.answer_netlink() #non-blocking version
-                mode = "NETLINK_CONNECTED"
+                    modem.answer_netlink()
+                    mode = "NETLINK_CONNECTED"
             except IOError:
                 modem.connect()
                 mode = "LISTENING"
@@ -343,17 +371,42 @@ def ringPhone():
     try:
         sock_send.connect((opponent, PORT))
         sock_send.sendall(b"RESET")
-        ready = select.select([sock_send], [], [])
-        if ready[0]:
-            data = sock_send.recv(1024)
-            if data == b'ACK RESET':
-                sip = sip_ring.SIP('user','',opponent,opponent_port,local_ip = my_ip,local_port=local_port)
-                sip.call(opponent_id,3)
-                sock_send.sendall(b'RING')
+        
+        while True:
+            ready = select.select([sock_send], [], [],0)
+            if ready[0]:
                 data = sock_send.recv(1024)
-                if data == b'ANSWERING':
+                if data == b'ACK RESET':
+                    sip = sip_ring.SIP('user','',opponent,opponent_port,local_ip = my_ip,local_port=local_port)
+                    sip.call(opponent_id,3)
+                    sock_send.sendall(b'RING')
+                elif data == b'ANSWERING':
                     print(datetime.now(), "Answering")
+                    modem.query_modem("ATA", timeout=120, response = "CONNECT")
+                    print(datetime.now(),"CONNECTED")
+                    sock_send.sendall(b'PING')
+
+                elif data == b"ACK PING":
+                    modem._serial.timeout=None
+                    modem._serial.write(b'\xff')
+                    while modem._serial.cd:
+                        char = modem._serial.read(1) #read through the buffer and skip all 0xff
+                        if char == b'\xff':
+                            continue
+                        elif char == b'\x01':
+                            # modem._serial.write(b'\x01')
+                            sock_send.sendall(b'RESPONSE')
+                            break
+                    if modem._serial.cd: #if we stayed connected
+                        continue
+                        
+                    elif not modem._serial.cd: #if we dropped the call
+                        return "hangup"
+
+                elif data == b'RESPONSE':
+                    modem._serial.write(b'\x01')
                     return opponent
+
 
     except socket.error:
         return "error"

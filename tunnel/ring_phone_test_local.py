@@ -5,6 +5,7 @@ from xband_config import opponent_port
 from xband_config import opponent_id
 from xband_config import local_port
 from datetime import datetime
+import time
 import select
 import socket
 import sip_ring
@@ -23,17 +24,28 @@ def ringPhone():
     try:
         sock_send.connect((opponent, PORT))
         sock_send.sendall(b"RESET")
-        ready = select.select([sock_send], [], [])
-        if ready[0]:
-            data = sock_send.recv(1024)
-            if data == b'ACK RESET':
-                sip = sip_ring.SIP('user','',opponent,opponent_port,local_ip = my_ip,local_port=local_port)
-                sip.call(opponent_id,3)
-                sock_send.sendall(b'RING')
+        
+        while True:
+            ready = select.select([sock_send], [], [],0)
+            if ready[0]:
                 data = sock_send.recv(1024)
-                if data == b'ANSWERING':
+                if data == b'ACK RESET':
+                    sip = sip_ring.SIP('user','',opponent,opponent_port,local_ip = my_ip,local_port=local_port)
+                    sip.call(opponent_id,3)
+                    sock_send.sendall(b'RING')
+                elif data == b'ANSWERING':
                     print(datetime.now(), "Answering")
-                    return opponent
+                    time.sleep(15) #simulate time to negotiate, might not need this.
+                    print(datetime.now(),"CONNECTED")
+                    sock_send.sendall(b'PING')
+
+                elif data == b"ACK PING":
+                    continue
+
+                elif data == b'RESPONSE':
+                    sock_send.sendall(b'RESPONSE')
+                    return
+
 
     except socket.error:
         return "error"

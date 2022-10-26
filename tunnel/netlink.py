@@ -190,10 +190,6 @@ def netlink_exchange(side,net_state,opponent,ser=ser):
         print(state)
         last = 0
         currentSequence = 0
-        global caller
-        global handshake
-        handshake = False
-        caller  = False
         # #logging block
         # f = open("recv-output.txt", "a")
         # f.write("New output")
@@ -205,7 +201,6 @@ def netlink_exchange(side,net_state,opponent,ser=ser):
         while(state != "netlink_disconnected"):
             ready = select.select([udp],[],[],0) #polling select
             if ready[0]:
-                caller = True
                 # #logging block
                 # currentTime = round(time.time() * 10000) - ts
                 # f.write(str(currentTime))
@@ -259,10 +254,9 @@ def netlink_exchange(side,net_state,opponent,ser=ser):
                         currentSequence = int(sequence) + 1
                         
                         toSend = payload
-                        if handshake == False and b'\x01' in toSend:
-                            toSend = b'\x01'
-                            handshake == True
+
                         print("received:",toSend)
+
                         ser.write(toSend)
                         if len(payload) > 0 and printout == True:
                             logger.info(binascii.hexlify(payload))
@@ -277,7 +271,6 @@ def netlink_exchange(side,net_state,opponent,ser=ser):
                 
     def sender(side,opponent):
         global state
-        global handshake
         print(datetime.now(),"sending")
         first_run = True
         if side == "waiting":
@@ -302,25 +295,6 @@ def netlink_exchange(side,net_state,opponent,ser=ser):
             new = ser.read(1) #should now block until data. Attempt to reduce CPU usage.
             
             raw_input = new + ser.read(ser.in_waiting)
-            
-            if side == "waiting":
-                if caller == True:
-                    new = ser.read(1) #should now block until data. Attempt to reduce CPU usage.
-            
-                    raw_input = new + ser.read(ser.in_waiting)
-                    if raw_input[-1] == 255:
-                        raw_input = b'\xff'
-                    
-                    side = "null"
-                if b'NO CARRIER' in raw_input:
-                    pass
-                else:
-                    continue
-            if handshake == True:
-                if raw_input[-1] == 255:
-                    continue
-                else:
-                    handshake = None
 
             if b"NO CARRIER" in raw_input:
                 print(datetime.now(),"NO CARRIER")
