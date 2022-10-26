@@ -5,6 +5,7 @@ Created on Thu May 19 08:01:31 2022
 @author: joe
 """
 #netlink_version=1663872260.57
+from subprocess import CalledProcessError
 import sys
 
 if __name__ == "__main__":
@@ -184,11 +185,15 @@ def netlink_setup(side,dial_string,modem):
     #time.sleep(0.2)
     return state
 
-def netlink_exchange(side,net_state,opponent):
+def netlink_exchange(side,net_state,opponent,ser=ser):
     def listener():
         print(state)
         last = 0
         currentSequence = 0
+        global caller
+        global handshake
+        handshake = False
+        caller  = False
         # #logging block
         # f = open("recv-output.txt", "a")
         # f.write("New output")
@@ -200,6 +205,7 @@ def netlink_exchange(side,net_state,opponent):
         while(state != "netlink_disconnected"):
             ready = select.select([udp],[],[],0) #polling select
             if ready[0]:
+                caller = True
                 # #logging block
                 # currentTime = round(time.time() * 10000) - ts
                 # f.write(str(currentTime))
@@ -253,6 +259,9 @@ def netlink_exchange(side,net_state,opponent):
                         currentSequence = int(sequence) + 1
                         
                         toSend = payload
+                        if handshake == False and b'\x01' in toSend:
+                            toSend = b'\x01'
+                            handshake == True
                         print("received:",toSend)
                         ser.write(toSend)
                         if len(payload) > 0 and printout == True:
@@ -268,14 +277,16 @@ def netlink_exchange(side,net_state,opponent):
                 
     def sender(side,opponent):
         global state
+        global handshake
         print(datetime.now(),"sending")
-        first_run = False
+        first_run = True
         if side == "waiting":
             oppPort = 20002
         if side == "calling":
             oppPort = 20001
         last = 0
         sequence = 0
+        print(opponent,oppPort)
 
         # #logging block
         # f = open("send-output.txt", "a")
@@ -286,13 +297,30 @@ def netlink_exchange(side,net_state,opponent):
         # #logging block
 
         packets = []
-        ser.timeout = 0
+        ser.timeout = None
         while(state != "netlink_disconnected"):
             new = ser.read(1) #should now block until data. Attempt to reduce CPU usage.
             
             raw_input = new + ser.read(ser.in_waiting)
             
-
+            if side == "waiting":
+                if caller == True:
+                    new = ser.read(1) #should now block until data. Attempt to reduce CPU usage.
+            
+                    raw_input = new + ser.read(ser.in_waiting)
+                    if raw_input[-1] == 255:
+                        raw_input = b'\xff'
+                    
+                    side = "null"
+                if b'NO CARRIER' in raw_input:
+                    pass
+                else:
+                    continue
+            if handshake == True:
+                if raw_input[-1] == 255:
+                    continue
+                else:
+                    handshake = None
 
             if b"NO CARRIER" in raw_input:
                 print(datetime.now(),"NO CARRIER")

@@ -173,11 +173,14 @@ def process():
                         # time.sleep(2)
                         data = conn.recv(1024)
                         if data == b"RING":
-                            time.sleep(2)
+                            print(datetime.now(),"RING")
+                            # time.sleep(4)
                             conn.sendall(b'ANSWERING')
+                            time.sleep(6)
+                            print(datetime.now(),'Answering')
                             modem.query_modem("ATX1D", timeout=120, response = "CONNECT")
                             print(datetime.now(),"connected")
-                            netlink.netlink_exchange("waiting","connected",opponent)
+                            netlink.netlink_exchange("waiting","connected",opponent,ser=modem._serial)
                             logger.info("Xband Disconnected")
                             mode = "LISTENING"
                             modem.connect()
@@ -255,7 +258,7 @@ def process():
             
         elif mode == "NETLINK_CONNECTED":
             if client == "xband":
-                netlink.netlink_exchange("calling","connected",opponent_ip)
+                netlink.netlink_exchange("calling","connected",opponent_ip,ser=modem._serial)
             else:
                 do_netlink(side,dial_string,modem)
             logger.info("Netlink Disconnected")
@@ -316,7 +319,6 @@ def xbandServer(modem):
                         if not modem._serial.cd:
                             print(datetime.now(),"CD still not asserted after 2 sec - xband hung up")
                             break
-        break
     
     # for i in range(3):
     #     modem._serial.write(b'+')
