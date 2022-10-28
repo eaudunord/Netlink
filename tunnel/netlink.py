@@ -255,7 +255,7 @@ def netlink_exchange(side,net_state,opponent,ser=ser):
                         
                         toSend = payload
 
-                        print("received:",toSend)
+                        # print("received:",toSend)
 
                         ser.write(toSend)
                         if len(payload) > 0 and printout == True:
@@ -305,7 +305,7 @@ def netlink_exchange(side,net_state,opponent,ser=ser):
                 # f.close() #logging
                 return
                 
-            print("sent:", raw_input)
+            # print(datetime.now(),"sent:", raw_input)
             
             try:
                 payload = raw_input

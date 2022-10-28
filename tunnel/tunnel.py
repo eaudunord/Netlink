@@ -182,13 +182,14 @@ def process():
                             conn.sendall(b'ACK PING')
                             modem._serial.timeout=None
                             modem._serial.write(b'\xff')
-                            while modem._serial.cd:
+                            while True:
                                 char = modem._serial.read(1) #read through the buffer and skip all 0xff
                                 if char == b'\xff':
                                     continue
                                 elif char == b'\x01':
                                     # modem._serial.write(b'\x01')
                                     conn.sendall(b'RESPONSE')
+                                    print(datetime.now(), 'got a response')
                                     break
                             if modem._serial.cd: #if we stayed connected
                                 continue
@@ -389,12 +390,13 @@ def ringPhone():
                 elif data == b"ACK PING":
                     modem._serial.timeout=None
                     modem._serial.write(b'\xff')
-                    while modem._serial.cd:
+                    while True:
                         char = modem._serial.read(1) #read through the buffer and skip all 0xff
                         if char == b'\xff':
                             continue
                         elif char == b'\x01':
                             # modem._serial.write(b'\x01')
+                            print(datetime.now(),"got a response")
                             sock_send.sendall(b'RESPONSE')
                             break
                     if modem._serial.cd: #if we stayed connected
