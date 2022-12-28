@@ -76,7 +76,7 @@ def digit_parser(modem):
                     if char == '#':
                         if '*' in dial_string: #if the ip address was dialed with * no need for further formatting
                             break
-                        elif len(dial_string) == 12: #if we have a full 12 digit string add in '.' every three characters
+                        elif len(dial_string) >= 12: #if we have a full 12 digit string add in '.' every three characters
                             dial_string = '.'.join(dial_string[i:i+3] for i in range(0, len(dial_string), 3))
                             break
                     if char in ip_digits:

@@ -234,7 +234,7 @@ def process():
                             logger.info("Incoming call from Xband")
                             client = "xband"
                             mode = "XBAND ANSWERING"
-                        elif dial_string == "11111111111":
+                        elif dial_string.split('*')[-1] == "1":
                             client = "xband"
                             mode = "NETLINK ANSWERING"
                             side = "calling"
