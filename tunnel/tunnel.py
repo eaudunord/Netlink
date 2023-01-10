@@ -13,12 +13,13 @@ import threading
 import errno
 import select
 from xband_config import my_ip
-from xband_config import opponent_ip
-from xband_config import cpu_id_spoof
+# from xband_config import opponent_ip
+# from xband_config import cpu_id_spoof
 from xband_config import opponent_port
 from xband_config import opponent_id
-from xband_config import local_port
-import sip_ring
+# from xband_config import local_port
+import femtosip.femtosip as sip_ring
+import subprocess
 com_port = None
 logger = logging.getLogger('tunnel')
 
@@ -234,7 +235,8 @@ def process():
                             logger.info("Incoming call from Xband")
                             client = "xband"
                             mode = "XBAND ANSWERING"
-                        elif dial_string.split('*')[-1] == "1":
+                        elif len(dial_string.split('*')) == 5 and dial_string.split('*')[-1] == "1":
+                            oppIP = '.'.join(dial_string.split('*')[0:4])
                             client = "xband"
                             mode = "NETLINK ANSWERING"
                             side = "calling"
@@ -261,7 +263,7 @@ def process():
             try:
                 if client == "xband":
                     modem.init_xband()
-                    result = ringPhone()
+                    result = ringPhone(oppIP)
                     if result == "hangup":
                         mode = "LISTENING"
                         modem.connect()
@@ -287,7 +289,7 @@ def process():
             
         elif mode == "NETLINK_CONNECTED":
             if client == "xband":
-                netlink.netlink_exchange("calling","connected",opponent_ip,ser=modem._serial)
+                netlink.netlink_exchange("calling","connected",oppIP,ser=modem._serial)
             else:
                 do_netlink(side,dial_string,modem)
             logger.info("Netlink Disconnected")
@@ -305,7 +307,8 @@ def xbandServer(modem):
     s.setblocking(False)
     s.settimeout(15)
     s.connect(("xbserver.retrocomputing.network", 56969))
-    hwid = cpu_id_spoof
+    cpu = subprocess.check_output(["wmic","cpu","get","ProcessorId","/format:csv"]).strip().split(",")[-1]
+    hwid = cpu.encode()
     sdata = b"///////PI-" + hwid + b"\x0a"
     sentid = 0
     logger.info("connected")
@@ -358,8 +361,8 @@ def xbandServer(modem):
     logger.info("Xband disconnected. Back to listening")
     return
 
-def ringPhone():
-    opponent = opponent_ip
+def ringPhone(oppIP):
+    opponent = oppIP
     PORT = 65433
     sock_send = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock_send.settimeout(15)
@@ -378,7 +381,7 @@ def ringPhone():
             if ready[0]:
                 data = sock_send.recv(1024)
                 if data == b'ACK RESET':
-                    sip = sip_ring.SIP('user','',opponent,opponent_port,local_ip = my_ip,local_port=local_port)
+                    sip = sip_ring.SIP('user','',opponent,opponent_port,local_ip = my_ip,protocol="udp")
                     sip.call(opponent_id,3)
                     sock_send.sendall(b'RING')
                 elif data == b'ANSWERING':
