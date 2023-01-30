@@ -307,8 +307,8 @@ def xbandServer(modem):
     s.setblocking(False)
     s.settimeout(15)
     s.connect(("xbserver.retrocomputing.network", 56969))
-    cpu = subprocess.check_output(["wmic","cpu","get","ProcessorId","/format:csv"]).strip().split(",")[-1]
-    hwid = cpu.encode()
+    cpu = subprocess.check_output(["wmic","cpu","get","ProcessorId","/format:csv"]).strip().split(b",")[-1]
+    hwid = cpu
     sdata = b"///////PI-" + hwid + b"\x0a"
     sentid = 0
     logger.info("connected")
