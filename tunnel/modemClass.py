@@ -1,4 +1,4 @@
-#modemClass_version=1663858266.854871
+#modemClass_version=202304081926
 import os
 import serial
 from datetime import datetime
@@ -50,7 +50,7 @@ class Modem(object):
     def connect_netlink(self,speed = 115200, timeout = 0.01, rtscts = False): #non-blocking
         if self._serial:
             self.disconnect()
-        print("Opening netlink serial interface to {}".format(self._device))
+        print("Opening serial interface to {}".format(self._device))
         self._serial = serial.Serial(
             self._device, speed, timeout=timeout, rtscts = rtscts
         )
@@ -113,7 +113,7 @@ class Modem(object):
         else:
             final_command = ("%s\r\n" % command).encode()
         self._serial.write(final_command)
-        print(final_command.decode())
+        print('Command: %s' % final_command.decode())
 
         start = time.time()
 
@@ -130,7 +130,7 @@ class Modem(object):
             
             if response.encode() in line:
                 if response != "OK":
-                    print(line.decode())
+                    print('Response: %s' % line.decode())
                 return  # Valid response
          
 
@@ -144,7 +144,7 @@ class Modem(object):
 
         final_command = ("%s\r\n" % command).encode()
         self._serial.write(final_command)
-        print(final_command.decode())
+        print('Command: %s' % final_command.decode())
 
         start = datetime.now()
 
@@ -159,7 +159,7 @@ class Modem(object):
             for resp in VALID_RESPONSES:
                 if resp in line:
                     if resp != b"OK":
-                        print(line.decode())
+                        print('Response: %s' % line.decode())
                     # logger.info(line[line.find(resp):])
                     return  # We are done
 

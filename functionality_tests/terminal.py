@@ -16,13 +16,13 @@ localPort   = 20002
 
 bufferSize  = 1024
 
-serverAddressPort   = ("127.0.0.1", 20001)
+serverAddressPort   = ("127.0.0.1", 20002)
 UDPServerSocket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
-UDPServerSocket.bind((localIP, localPort))
-print("UDP server up and listening")
-i= 0
-# raw_input = input(">> ")
-raw_input = "Test"
+#UDPServerSocket.bind((localIP, localPort))
+#print("UDP server up and listening")
+#i= 0
+raw_input = input(">> ")
+#raw_input = "Test"
 
 delimiter = str.encode("sequenceno",'ANSI')
 while(raw_input != "+++"):
@@ -30,10 +30,11 @@ while(raw_input != "+++"):
         payload = str.encode(raw_input,'ANSI')
         ts = time.time()
         print(ts)
-        UDPServerSocket.sendto((payload+delimiter+struct.pack('d',ts)), serverAddressPort)
-        i+=1
+        #UDPServerSocket.sendto((payload+delimiter+struct.pack('d',ts)), serverAddressPort)
+        UDPServerSocket.sendto((payload), serverAddressPort)
+        #i+=1
         time.sleep(.02)
-        #raw_input = input(">> ")
+        raw_input = input(">> ")
     except KeyboardInterrupt:
         sys.exit()
         

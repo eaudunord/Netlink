@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202212272332
+#netlink_version=202304081926
 import sys
 
 if __name__ == "__main__":
@@ -16,10 +16,17 @@ import time
 import serial
 from datetime import datetime
 import logging
-logger = logging.getLogger('dreampi')
+logger = logging.getLogger('Netlink')
 import threading
 import binascii
 import select
+import os
+
+osName = os.name
+if osName != 'posix':
+    pinging = True
+else:
+    pinging = False
 
 packetSplit = b"<packetSplit>"
 dataSplit = b"<dataSplit>"
@@ -62,8 +69,8 @@ def digit_parser(modem):
     elif char == '#':
         dial_string = ""
         while (True):
-            char = modem._serial.read(1).decode() #this is blocking, but the modem sends <DLE>s at regular intervals to indicate silence
-            if not char: #which makes this pointless
+            char = modem._serial.read(1).decode() #modem sends <DLE>s at regular intervals to indicate silence
+            if not char:
                 continue
             if ord(char) == 16: #16 is <DLE>
                 try:
@@ -165,12 +172,55 @@ def netlink_setup(side,dial_string,modem):
 def netlink_exchange(side,net_state,opponent):
     def listener():
         print(state)
-        last = 0
+        pingCount = 0
+        lastPing = 0
+        ping = time.time()
+        pong = time.time()
+        jitterStore = []
+        pingStore = []
         currentSequence = 0
+        maxPing = 0
+        maxJitter = 0
+        if side == "waiting":
+            oppPort = 20002
+        if side == "calling":
+            oppPort = 20001
         while(state != "netlink_disconnected"):
             ready = select.select([udp],[],[],0) #polling select
             if ready[0]:
                 packetSet = udp.recv(1024)
+                
+                #start pinging code block
+                if pinging == True:
+                    pingCount +=1
+                    if pingCount >= 30:
+                        pingCount = 0
+                        ping = time.time()
+                        udp.sendto(b'PING_SHIRO', (opponent,oppPort))
+                    if packetSet == b'PING_SHIRO':
+                        udp.sendto(b'PONG_SHIRO', (opponent,oppPort))
+                        continue
+                    elif packetSet == b'PONG_SHIRO':
+                        pong = time.time()
+                        pingResult = round((pong-ping)*1000,2)
+                        if pingResult > maxPing:
+                            maxPing = pingResult
+                        pingStore.insert(0,pingResult)
+                        if len(pingStore) > 20:
+                            pingStore.pop()
+                        jitter = round(abs(pingResult-lastPing),2)
+                        if jitter > maxJitter:
+                            maxJitter = jitter
+                        jitterStore.insert(0,jitter)
+                        if len(jitterStore) >20:
+                            jitterStore.pop()
+                        jitterAvg = round(sum(jitterStore)/len(jitterStore),2)
+                        pingAvg = round(sum(pingStore)/len(pingStore),2)
+                        sys.stdout.write('Ping: %s Max: %s | Jitter: %s Max: %s | Avg Ping: %s |  Avg Jitter: %s          \r' % (pingResult,maxPing,jitter, maxJitter,pingAvg,jitterAvg))
+                        lastPing = pingResult
+                        continue
+                #end pinging code block
+
                 packets= packetSet.split(packetSplit)
                 try:
                     while True:
@@ -224,6 +274,7 @@ def netlink_exchange(side,net_state,opponent):
             new = ser.read(1) #should now block until data. Attempt to reduce CPU usage.
             raw_input = new + ser.read(ser.in_waiting)
             if b"NO CARRIER" in raw_input:
+                print('')
                 logger.info("NO CARRIER")
                 # ser.write(("ATs86?\r\n").encode())
                 # response = ser.readline().strip()

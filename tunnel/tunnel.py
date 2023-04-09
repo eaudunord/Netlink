@@ -1,4 +1,4 @@
-#tunnel_version=1663983944.323452
+#tunnel_version=202304081926
 import sys
 import os
 from datetime import datetime
@@ -9,7 +9,7 @@ import serial
 import requests
 import platform
 com_port = None
-logger = logging.getLogger('dreampi')
+logger = logging.getLogger('Netlink')
 
 
 
