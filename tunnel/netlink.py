@@ -20,13 +20,8 @@ logger = logging.getLogger('Netlink')
 import threading
 import binascii
 import select
-import os
 
-osName = os.name
-if osName != 'posix':
-    pinging = True
-else:
-    pinging = False
+pinging = True
 
 packetSplit = b"<packetSplit>"
 dataSplit = b"<dataSplit>"
