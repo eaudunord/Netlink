@@ -198,6 +198,8 @@ def netlink_exchange(side,net_state,opponent):
                     elif packetSet == b'PONG_SHIRO':
                         pong = time.time()
                         pingResult = round((pong-ping)*1000,2)
+                        if pingResult > 500:
+                            continue
                         if pingResult > maxPing:
                             maxPing = pingResult
                         pingStore.insert(0,pingResult)
