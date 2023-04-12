@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202304111746
+#netlink_version=202304120907
 import sys
 
 if __name__ == "__main__":
@@ -176,6 +176,7 @@ def netlink_exchange(side,net_state,opponent):
         currentSequence = 0
         maxPing = 0
         maxJitter = 0
+        recoveredCount = 0
         if side == "waiting":
             oppPort = 20002
         if side == "calling":
@@ -213,7 +214,7 @@ def netlink_exchange(side,net_state,opponent):
                             jitterStore.pop()
                         jitterAvg = round(sum(jitterStore)/len(jitterStore),2)
                         pingAvg = round(sum(pingStore)/len(pingStore),2)
-                        sys.stdout.write('Ping: %s Max: %s | Jitter: %s Max: %s | Avg Ping: %s |  Avg Jitter: %s          \r' % (pingResult,maxPing,jitter, maxJitter,pingAvg,jitterAvg))
+                        sys.stdout.write('Ping: %s Max: %s | Jitter: %s Max: %s | Avg Ping: %s |  Avg Jitter: %s | Recovered Packets: %s         \r' % (pingResult,maxPing,jitter, maxJitter,pingAvg,jitterAvg,recoveredCount))
                         lastPing = pingResult
                         continue
                 #end pinging code block
@@ -232,7 +233,8 @@ def netlink_exchange(side,net_state,opponent):
                         #if the packet needed is not here,  grab the latest in the set
                         if packetNum == len(packets):
                             packetNum = 0
-                        
+                        if packetNum > 0 :
+                            recoveredCount += 1
                         message = packets[packetNum]
                         payload = message.split(dataSplit)[0]
                         sequence = message.split(dataSplit)[1]
