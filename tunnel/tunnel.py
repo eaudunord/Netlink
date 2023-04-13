@@ -1,4 +1,4 @@
-#tunnel_version=202304130856
+#tunnel_version=202304130857
 import sys
 import os
 from datetime import datetime
@@ -12,14 +12,8 @@ import socket
 import threading
 import errno
 import select
-# from xband_config import my_ip
-# from xband_config import opponent_ip
-# from xband_config import cpu_id_spoof
-# from xband_config import opponent_port
 from xband_config import my_sip_port
 from xband_config import my_id
-# from xband_config import opponent_id
-# from xband_config import local_port
 import femtosip.femtosip as sip_ring
 import subprocess
 com_port = None
@@ -391,6 +385,7 @@ def ringPhone(oppIP):
                 data = sock_send.recv(1024)
                 if data[:9] == b'ACK RESET':
                     opponent_id = data.split(b'<>')[1].decode()
+                    opponent_port = int(data.split(b'<>')[2])
                     sip = sip_ring.SIP('user','',opponent,opponent_port,local_ip = my_ip,protocol="udp")
                     sip.call(opponent_id,3)
                     sock_send.sendall(b'RING')
