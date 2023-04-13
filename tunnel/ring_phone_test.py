@@ -1,6 +1,7 @@
 from xband_config import my_ip
 from xband_config import opponent_port
 from xband_config import opponent_id
+from xband_config import opponent_ip
 import femtosip.femtosip as sip_ring
 
 opponent = opponent_ip

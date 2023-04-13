@@ -1,4 +1,4 @@
-#tunnel_version=1663983944.323452
+#tunnel_version=202304130856
 import sys
 import os
 from datetime import datetime
@@ -12,21 +12,30 @@ import socket
 import threading
 import errno
 import select
-from xband_config import my_ip
+# from xband_config import my_ip
 # from xband_config import opponent_ip
 # from xband_config import cpu_id_spoof
-from xband_config import opponent_port
-from xband_config import opponent_id
+# from xband_config import opponent_port
+from xband_config import my_sip_port
+from xband_config import my_id
+# from xband_config import opponent_id
 # from xband_config import local_port
 import femtosip.femtosip as sip_ring
 import subprocess
 com_port = None
 logger = logging.getLogger('tunnel')
+try:
+    r = requests.get("http://myipv4.p1.opendns.com/get_my_ip")
+    r.raise_for_status()
+    my_ip = r.json()['ip']
+except:
+    print("Couldn't get WAN IP")
+
 
 xbandnums = ["18002071194","19209492263","0120717360","0355703001"]
 
 def updater():
-    base_script_url = "https://raw.githubusercontent.com/eaudunord/Netlink/latest/tunnel/"
+    base_script_url = "https://raw.githubusercontent.com/eaudunord/Netlink/16bitXband/tunnel/"
     checkScripts = ['modemClass.py','tunnel.py','netlink.py']
     restartFlag = False
     for script in checkScripts:
@@ -70,7 +79,7 @@ def updater():
         print('Main script updated. Please restart the tunnel')
         sys.exit()
 
-# updater()
+updater()
 
 import netlink
 from modemClass import Modem
@@ -169,7 +178,7 @@ def process():
                             modem.query_modem(b'AT%E0')
                             modem.query_modem(b"AT\V1%C0")
                             modem.query_modem(b'AT+MS=V22b')
-                            conn.sendall(b'ACK RESET')
+                            conn.sendall(b'ACK RESET<>%s<>%s' % (my_id.encode(),str(my_sip_port).encode()))
                             # time.sleep(2)
                         elif data == b"RING":
                             print(datetime.now(),"RING")
@@ -380,7 +389,8 @@ def ringPhone(oppIP):
             ready = select.select([sock_send], [], [],0)
             if ready[0]:
                 data = sock_send.recv(1024)
-                if data == b'ACK RESET':
+                if data[:9] == b'ACK RESET':
+                    opponent_id = data.split(b'<>')[1].decode()
                     sip = sip_ring.SIP('user','',opponent,opponent_port,local_ip = my_ip,protocol="udp")
                     sip.call(opponent_id,3)
                     sock_send.sendall(b'RING')
