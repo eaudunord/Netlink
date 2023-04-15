@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=1663872260.57
+#netlink_version=202304150832
 from subprocess import CalledProcessError
 import sys
 
@@ -33,6 +33,7 @@ data = []
 state = "starting"
 poll_rate = 0.01
 ser = ""
+pinging = True
 
 def digit_parser(modem):
     char = modem._serial.read(1).decode() #first character was <DLE>, what's next?
@@ -188,48 +189,60 @@ def netlink_setup(side,dial_string,modem):
 def netlink_exchange(side,net_state,opponent,ser=ser):
     def listener():
         print(state)
-        last = 0
+        pingCount = 0
+        lastPing = 0
+        ping = time.time()
+        pong = time.time()
+        jitterStore = []
+        pingStore = []
         currentSequence = 0
-        # #logging block
-        # f = open("recv-output.txt", "a")
-        # f.write("New output")
-        # f.write("\n")
-        # ts = round(time.time() * 10000)
-        # lastTime = round(time.time() * 10000) - ts
-        # #logging block
+        maxPing = 0
+        maxJitter = 0
+        if side == "waiting":
+            oppPort = 20002
+        if side == "calling":
+            oppPort = 20001
 
         while(state != "netlink_disconnected"):
             ready = select.select([udp],[],[],0) #polling select
             if ready[0]:
-                # #logging block
-                # currentTime = round(time.time() * 10000) - ts
-                # f.write(str(currentTime))
-                # f.write("\t")
-                # f.write(str(max(currentTime - lastTime,0)))
-                # f.write("\t")
-                # #logging block
-
                 packetSet = udp.recv(1024)
 
-                # #logging block
-                # currentTime = round(time.time() * 10000) - ts            
-                # f.write(str(currentTime))
-                # f.write("\t")
-                # f.write(str(max(currentTime - lastTime,0)))
-                # f.write("\t")
-                # #logging block
+                #start pinging code block
+                if pinging == True:
+                    pingCount +=1
+                    if pingCount >= 30:
+                        pingCount = 0
+                        ping = time.time()
+                        udp.sendto(b'PING_SHIRO', (opponent,oppPort))
+                    if packetSet == b'PING_SHIRO':
+                        udp.sendto(b'PONG_SHIRO', (opponent,oppPort))
+                        continue
+                    elif packetSet == b'PONG_SHIRO':
+                        pong = time.time()
+                        pingResult = round((pong-ping)*1000,2)
+                        if pingResult > 500:
+                            continue
+                        if pingResult > maxPing:
+                            maxPing = pingResult
+                        pingStore.insert(0,pingResult)
+                        if len(pingStore) > 20:
+                            pingStore.pop()
+                        jitter = round(abs(pingResult-lastPing),2)
+                        if jitter > maxJitter:
+                            maxJitter = jitter
+                        jitterStore.insert(0,jitter)
+                        if len(jitterStore) >20:
+                            jitterStore.pop()
+                        jitterAvg = round(sum(jitterStore)/len(jitterStore),2)
+                        pingAvg = round(sum(pingStore)/len(pingStore),2)
+                        sys.stdout.write('Ping: %s Max: %s | Jitter: %s Max: %s | Avg Ping: %s |  Avg Jitter: %s          \r' % (pingResult,maxPing,jitter, maxJitter,pingAvg,jitterAvg))
+                        lastPing = pingResult
+                        continue
+                #end pinging code block
+                
 
                 packets= packetSet.split(packetSplit)
-                
-                # #logging block
-                # lastTime = currentTime
-                # for p in packets:
-                #     f.write(p.split(dataSplit)[1])
-                #     f.write("-")          
-                #     f.write(binascii.hexlify( p.split(dataSplit)[0] ))
-                #     f.write("\t")        
-                # f.write("\n")                        
-                # #logging block
 
                 try:
                     while True:
