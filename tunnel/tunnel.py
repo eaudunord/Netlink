@@ -1,4 +1,4 @@
-#tunnel_version=202304151445
+#tunnel_version=202304161131
 import sys
 import os
 from datetime import datetime
@@ -180,7 +180,7 @@ def process():
                             conn.sendall(b'ANSWERING')
                             time.sleep(6)
                             print(datetime.now(),'Answering')
-                            modem.query_modem("ATS91=15")
+                            # modem.query_modem("ATS91=15")
                             modem.query_modem("ATX1D", timeout=120, response = "CONNECT")
                             print(datetime.now(),"CONNECTED")
                         elif data == b"PING":
@@ -392,7 +392,7 @@ def ringPhone(oppIP):
                     sock_send.sendall(b'RING')
                 elif data == b'ANSWERING':
                     print(datetime.now(), "Answering")
-                    modem.query_modem("ATS91=15")
+                    #modem.query_modem("ATS91=15")
                     modem.query_modem("ATA", timeout=120, response = "CONNECT")
                     print(datetime.now(),"CONNECTED")
                     sock_send.sendall(b'PING')
