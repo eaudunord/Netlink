@@ -1,4 +1,4 @@
-#modemClass_version=1663858266.854871
+#modemClass_version=202304170905
 import os
 import serial
 from datetime import datetime
