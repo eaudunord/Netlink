@@ -119,7 +119,7 @@ class Modem(object):
 
         line = b""
         while True:
-            new_data = self._serial.readline().strip()
+            new_data = self._serial.readline()
 
             if not new_data: #non-blocking modem will end up here when timeout reached, try until this function's timeout is reached.
                 if time.time() - start < timeout:
@@ -129,6 +129,8 @@ class Modem(object):
             line = line + new_data
             
             if response.encode() in line:
+                if command == b'AT&V1':
+                    print(line.decode())
                 if response != "OK":
                     print(line.decode())
                 return  # Valid response

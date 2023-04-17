@@ -300,6 +300,7 @@ def process():
             # time.sleep(5)
             mode = "LISTENING"
             modem.connect()
+            modem.query_modem(b'AT&V1')
             modem.start_dial_tone()
         # print(mode)
 
