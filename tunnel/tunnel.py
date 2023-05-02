@@ -15,7 +15,7 @@ logger = logging.getLogger('Netlink')
 
 def updater():
     base_script_url = "https://raw.githubusercontent.com/eaudunord/Netlink/latest/tunnel/"
-    checkScripts = ['modemClass.py','tunnel.py','netlink.py']
+    checkScripts = ['modemClass.py','tunnel.py','netlink.py','xband.py']
     restartFlag = False
     for script in checkScripts:
         url = base_script_url+script
@@ -26,11 +26,15 @@ def updater():
                 if b'_version' in line: 
                     upstream_version = str(line.decode().split('version=')[1]).strip()
                     break
-            with open(script,'rb') as f:
-                for line in f:
-                    if b'_version' in line:
-                        local_version = str(line.decode().split('version=')[1]).strip()
-                        break
+            local_script = os.path.realpath('./') + "/" +script
+            if os.path.isfile(local_script) == False:
+                local_version = None
+            else:
+                with open(script,'rb') as f:
+                    for line in f:
+                        if b'_version' in line:
+                            local_version = str(line.decode().split('version=')[1]).strip()
+                            break
             if upstream_version == local_version:
                 print('%s Up To Date' % script)
             else:

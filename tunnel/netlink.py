@@ -58,6 +58,9 @@ def digit_parser(modem):
         #at this point we have the full dialed string. We can insert an IP address lookup here. For now, assume PPP
         if dial_string == "0":
             return {'client':'direct_dial','dial_string':dial_string,'side':'waiting'}
+        if dial_string == "70":
+            logger.info("Call waiting disabled")
+            return "nada"
         else:
             return {'client':'ppp_internet','dial_string':dial_string,'side':'na'}
 
@@ -73,7 +76,7 @@ def digit_parser(modem):
                     if char == '#':
                         if '*' in dial_string: #if the ip address was dialed with * no need for further formatting
                             break
-                        elif len(dial_string) == 12: #if we have a full 12 digit string add in '.' every three characters
+                        elif len(dial_string) >= 12: #if we have a full 12 digit string add in '.' every three characters
                             dial_string = '.'.join(dial_string[i:i+3] for i in range(0, len(dial_string), 3))
                             break
                     if char in ip_digits:
@@ -164,7 +167,7 @@ def netlink_setup(side,dial_string,modem):
     #time.sleep(0.2)
     return state
 
-def netlink_exchange(side,net_state,opponent):
+def netlink_exchange(side,net_state,opponent,ser=ser):
     def listener():
         print(state)
         pingCount = 0
@@ -272,7 +275,7 @@ def netlink_exchange(side,net_state,opponent):
         while(state != "netlink_disconnected"):
             new = ser.read(1) #should now block until data. Attempt to reduce CPU usage.
             raw_input = new + ser.read(ser.in_waiting)
-            if b"NO CARRIER" in raw_input:
+            if b"NO CARRIER" in raw_input and not ser.cd:
                 print('')
                 logger.info("NO CARRIER")
                 # ser.write(("ATs86?\r\n").encode())
