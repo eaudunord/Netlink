@@ -62,7 +62,10 @@ def updater():
         print('Main script updated. Please restart the tunnel')
         sys.exit()
 
-updater()
+if 'noUpdate' in sys.argv:
+    print("updates disabled")
+else:
+    updater()
 
 import netlink
 from modemClass import Modem
@@ -98,6 +101,8 @@ def com_scanner():
 
 try:
     com_port = sys.argv[1] #script can be started with com port as an argument. If it isn't, we can scan for the modem.
+    if 'com' not in com_port.lower():
+        raise IndexError
 except IndexError:
     com_scanner()
     if com_port:
