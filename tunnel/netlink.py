@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202304120907
+#netlink_version=202305030924
 import sys
 
 if __name__ == "__main__":
@@ -16,10 +16,17 @@ import time
 import serial
 from datetime import datetime
 import logging
-logger = logging.getLogger('Netlink')
 import threading
 import binascii
 import select
+import os
+
+osName = os.name
+if osName == 'posix':
+    logger = logging.getLogger('dreampi')
+else:
+    logger = logging.getLogger('Netlink')
+logger.setLevel(logging.INFO)
 
 pinging = True
 
@@ -126,7 +133,7 @@ def initConnection(ms,dial_string):
                         #tcp.close()
                         return ["connected",opponent]
                     if not data:
-                        print("failed to init")
+                        logger.info("failed to init")
                         #tcp.shutdown(socket.SHUT_RDWR)
                         #tcp.close()
                         break
@@ -169,7 +176,7 @@ def netlink_setup(side,dial_string,modem):
 
 def netlink_exchange(side,net_state,opponent,ser=ser):
     def listener():
-        print(state)
+        logger.info(state)
         pingCount = 0
         lastPing = 0
         ping = time.time()
@@ -217,7 +224,8 @@ def netlink_exchange(side,net_state,opponent,ser=ser):
                             jitterStore.pop()
                         jitterAvg = round(sum(jitterStore)/len(jitterStore),2)
                         pingAvg = round(sum(pingStore)/len(pingStore),2)
-                        sys.stdout.write('Ping: %s Max: %s | Jitter: %s Max: %s | Avg Ping: %s |  Avg Jitter: %s | Recovered Packets: %s         \r' % (pingResult,maxPing,jitter, maxJitter,pingAvg,jitterAvg,recoveredCount))
+                        if osName != 'posix':
+                            sys.stdout.write('Ping: %s Max: %s | Jitter: %s Max: %s | Avg Ping: %s |  Avg Jitter: %s | Recovered Packets: %s         \r' % (pingResult,maxPing,jitter, maxJitter,pingAvg,jitterAvg,recoveredCount))
                         lastPing = pingResult
                         continue
                 #end pinging code block
@@ -275,7 +283,7 @@ def netlink_exchange(side,net_state,opponent,ser=ser):
         while(state != "netlink_disconnected"):
             new = ser.read(1) #should now block until data. Attempt to reduce CPU usage.
             raw_input = new + ser.read(ser.in_waiting)
-            if b"NO CARRIER" in raw_input and not ser.cd:
+            if b"NO CARRIER" in raw_input:
                 print('')
                 logger.info("NO CARRIER")
                 # ser.write(("ATs86?\r\n").encode())

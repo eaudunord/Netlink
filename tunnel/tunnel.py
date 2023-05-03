@@ -1,4 +1,4 @@
-#tunnel_version=202304081926
+#tunnel_version=202305030924
 import sys
 import os
 from datetime import datetime
@@ -66,6 +66,7 @@ updater()
 
 import netlink
 from modemClass import Modem
+import xband
 
 
 def com_scanner():
@@ -124,17 +125,43 @@ def do_netlink(side,dial_string,modem):
 
 
 def process():
+    xbandnums = ["18002071194","19209492263","0120717360","0355703001"]
+    
+    xbandMatching = False
+    xbandTimer = None
+    xbandInit = False
+
     mode = "LISTENING"
 
     modem.connect()
     modem.start_dial_tone()
 
     time_digit_heard = None
+    saturn = True
     while True:
 
         now = datetime.now()
 
         if mode == "LISTENING":
+
+            if xbandMatching == True:
+                if xbandInit == False:
+                    xband.xbandInit()
+                    xbandInit = True
+                if time.time() - xbandTimer > 900:
+                    xbandMatching = False
+                    continue
+                xband.openXband()
+                xbandResult,opponent = xband.xbandListen(modem)
+                if xbandResult == "connected":
+                    netlink.netlink_exchange("waiting","connected",opponent,ser=modem._serial)
+                    logger.info("Xband Disconnected")
+                    mode = "LISTENING"
+                    modem.connect()
+                    modem.start_dial_tone()
+                    xbandMatching = False
+                    xband.closeXband()
+
             modem.update()
             char = modem._serial.read(1).strip().decode()
             if not char:
@@ -150,33 +177,94 @@ def process():
                         client = parsed['client']
                         dial_string = parsed['dial_string']
                         side = parsed['side']
-
-
                         logger.info("Heard: %s" % dial_string)
+
+                        if dial_string in xbandnums:
+                            logger.info("Incoming call from Xband")
+                            client = "xband"
+                            mode = "XBAND ANSWERING"
+
+                        elif dial_string == "00":
+                            side = "waiting"
+                            client = "direct_dial"
+
+                        elif dial_string[0:3] == "859":
+                            try:
+                                kddi_opponent = dial_string
+                                kddi_lookup = "https://dial.redreamcast.net/?phoneNumber=%s" % kddi_opponent
+                                response = requests.get(kddi_lookup)
+                                response.raise_for_status()
+                                ip = response.text
+                                if len(ip) == 0:
+                                    pass
+                                else:
+                                    dial_string = ip
+                                    logger.info(dial_string)
+                                    saturn = False
+                                    side = "calling"
+                                    client = "direct_dial"
+                                    time.sleep(7)
+                            except requests.exceptions.HTTPError:
+                                pass
+
+                        elif len(dial_string.split('*')) == 5 and dial_string.split('*')[-1] == "1":
+                            oppIP = '.'.join(dial_string.split('*')[0:4])
+                            client = "xband"
+                            mode = "NETLINK ANSWERING"
+                            side = "calling"
+                        
                         if client == "direct_dial":
                             mode = "NETLINK ANSWERING"
+                        elif client == "xband":
+                            pass
                         else:
                             mode = "ANSWERING"
                         modem.stop_dial_tone()
                         time_digit_heard = now
                 except (TypeError, ValueError):
                     pass
+
+        elif mode == "XBAND ANSWERING":
+            # print("xband answering")
+            if (now - time_digit_heard).total_seconds() > 8.0:
+                time_digit_heard = None
+                modem.query_modem("ATA", timeout=120, response = "CONNECT")
+                xband.xbandServer(modem)
+                mode = "LISTENING"
+                modem.connect()
+                modem.start_dial_tone()
+                xbandMatching = True
+                xbandTimer = time.time()
+
         elif mode == "ANSWERING":
             if (now - time_digit_heard).total_seconds() > 8.0:
                 time_digit_heard = None
                 modem.answer()
                 modem.disconnect()
                 mode = "CONNECTED"
+
         elif mode == "NETLINK ANSWERING":
             if (now - time_digit_heard).total_seconds() > 8.0:
                 time_digit_heard = None
-                modem.connect_netlink(speed=57600,timeout=0.01,rtscts=True) #non-blocking version
+                
                 try:
-                    modem.query_modem(b'AT%E0')
-                    modem.query_modem(b"AT\N3\V1%C0")
-                    modem.query_modem(b'AT+MS=V32b,1,14400,14400,14400,14400')
-                    modem.query_modem("ATA", timeout=120, response = "CONNECT")
-                    mode = "NETLINK_CONNECTED"
+                    if client == "xband":
+                        modem.init_xband()
+                        result = xband.ringPhone(oppIP,modem)
+                        if result == "hangup":
+                            mode = "LISTENING"
+                            modem.connect()
+                            modem.start_dial_tone()
+                        else:
+                            mode = "NETLINK_CONNECTED"
+                    else:
+                        modem.connect_netlink(speed=57600,timeout=0.01,rtscts = True) #non-blocking version
+                        modem.query_modem(b"AT%E0\V1")
+                        if saturn:
+                            modem.query_modem(b'AT%C0\N3')
+                            modem.query_modem(b'AT+MS=V32b,1,14400,14400,14400,14400')
+                        modem.query_modem(b"ATA", timeout=120, response = "CONNECT")
+                        mode = "NETLINK_CONNECTED"
                 except IOError:
                     modem.connect()
                     mode = "LISTENING"
@@ -191,7 +279,10 @@ def process():
 
             
         elif mode == "NETLINK_CONNECTED":
-            do_netlink(side,dial_string,modem)
+            if client == "xband":
+                netlink.netlink_exchange("calling","connected",oppIP,ser=modem._serial)
+            else:
+                do_netlink(side,dial_string,modem)
             logger.info("Netlink Disconnected")
             # time.sleep(5)
             mode = "LISTENING"

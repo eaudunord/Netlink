@@ -9,12 +9,18 @@ import socket
 import time
 from datetime import datetime
 import logging
-logger = logging.getLogger('Xband')
 import select
 import os
 import requests
 import subprocess
 import errno
+
+osName = os.name
+if osName == 'posix':
+    logger = logging.getLogger('dreampi')
+else:
+    logger = logging.getLogger('Xband')
+logger.setLevel(logging.INFO)
 
 opponent_port = 4000
 opponent_id = "11"
@@ -25,10 +31,9 @@ try:
     r.raise_for_status()
     my_ip = r.json()['ip']
 except requests.exceptions.HTTPError:
-    print("Couldn't get WAN IP")
+    logger.info("Couldn't get WAN IP")
     my_ip = "127.0.0.1"
 
-osName = os.name
 if osName == 'posix': # should work on linux and Mac for USB modem, but untested.
     femtoSipPath = "/home/pi/dreampi/femtosip"
 else:
@@ -38,7 +43,7 @@ def openXband():
     PORT = 65433
     global sock_listen
     sock_listen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock_listen.settimeout(120)
+    sock_listen.setblocking(0)
     sock_listen.bind(('', PORT))
     sock_listen.listen(5)
 
@@ -60,12 +65,12 @@ def xbandInit():
             with open(femtoSipPath+"/femtosip.py",'wb') as f:
                 text = r.content.decode('ascii','ignore').encode()
                 f.write(text)
-            print('fetched femtosip')
+            logger.info('fetched femtosip')
             r = requests.get("https://github.com/astoeckel/femtosip/raw/master/LICENSE")
             r.raise_for_status()
             with open(femtoSipPath+"/LICENSE",'wb') as f:
                 f.write(r.content)
-            print('fetched LICENSE')
+            logger.info('fetched LICENSE')
             with open(femtoSipPath+"/__init__.py",'wb') as f:
                 pass
         except requests.exceptions.HTTPError:
@@ -81,9 +86,10 @@ def xbandListen(modem):
     global sock_listen
     ready = select.select([sock_listen], [], [],0)
     if ready[0]:
-        print("incoming xband call")
+        logger.info("incoming xband call")
         conn, addr = sock_listen.accept()
         opponent = addr[0]
+        callTime = time.time()
         while True:
             ready = select.select([conn], [], [],0)
             if ready[0]:
@@ -97,13 +103,13 @@ def xbandListen(modem):
                     conn.sendall(b'ACK RESET')
                     # time.sleep(2)
                 elif data == b"RING":
-                    print("RING")
+                    logger.info("RING")
                     # time.sleep(4)
                     conn.sendall(b'ANSWERING')
                     time.sleep(6)
-                    print('Answering')
+                    logger.info('Answering')
                     modem.query_modem("ATX1D", timeout=120, response = "CONNECT")
-                    print("CONNECTED")
+                    logger.info("CONNECTED")
                 elif data == b"PING":
                     conn.sendall(b'ACK PING')
                     modem._serial.timeout=None
@@ -115,7 +121,7 @@ def xbandListen(modem):
                         elif char == b'\x01':
                             # modem._serial.write(b'\x01')
                             conn.sendall(b'RESPONSE')
-                            print('got a response')
+                            logger.info('got a response')
                             break
                     if modem._serial.cd: #if we stayed connected
                         continue
@@ -131,6 +137,8 @@ def xbandListen(modem):
                     modem._serial.write(b'\x01')
                     if modem._serial.cd:
                         return ("connected",opponent)
+                if time.time() - callTime > 120:
+                    break
     return ("nothing","")
                     
 def ringPhone(oppIP,modem):
@@ -138,7 +146,7 @@ def ringPhone(oppIP,modem):
     PORT = 65433
     sock_send = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock_send.settimeout(15)
-    print(datetime.now(), "Calling opponent")
+    logger.info("Calling opponent")
     # time.sleep(8)
     
     # sip = femtosip.SIP(user, password, gateway, port, display_name)
@@ -157,9 +165,9 @@ def ringPhone(oppIP,modem):
                     sip.call(opponent_id,3)
                     sock_send.sendall(b'RING')
                 elif data == b'ANSWERING':
-                    print(datetime.now(), "Answering")
+                    logger.info("Answering")
                     modem.query_modem("ATA", timeout=120, response = "CONNECT")
-                    print(datetime.now(),"CONNECTED")
+                    logger.info("CONNECTED")
                     sock_send.sendall(b'PING')
 
                 elif data == b"ACK PING":
@@ -171,7 +179,7 @@ def ringPhone(oppIP,modem):
                             continue
                         elif char == b'\x01':
                             # modem._serial.write(b'\x01')
-                            print(datetime.now(),"got a response")
+                            logger.info("got a response")
                             sock_send.sendall(b'RESPONSE')
                             break
                     if modem._serial.cd: #if we stayed connected
@@ -236,7 +244,7 @@ def xbandServer(modem):
             logger.info("1: CD is not asserted")
             time.sleep(2.0)
             if not modem._serial.cd:
-                print("CD still not asserted after 2 sec - xband hung up")
+                logger.info("CD still not asserted after 2 sec - xband hung up")
                 break
         if sentid == 1:        
             if modem._serial.in_waiting:
@@ -252,7 +260,7 @@ def xbandServer(modem):
                         logger.info("2: CD is not asserted")
                         time.sleep(2.0)
                         if not modem._serial.cd:
-                            print(datetime.now(),"CD still not asserted after 2 sec - xband hung up")
+                            logger.info("CD still not asserted after 2 sec - xband hung up")
                             break
     s.close()
     logger.info("Xband disconnected. Back to listening")
