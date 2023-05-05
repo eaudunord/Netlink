@@ -46,6 +46,7 @@ def openXband():
     sock_listen.setblocking(0)
     sock_listen.bind(('', PORT))
     sock_listen.listen(5)
+    logger.info("listening for xband call")
 
 def closeXband():
     global sock_listen
@@ -60,7 +61,7 @@ def xbandInit():
     if os.path.exists(femtoSipPath) == False:
         try:
             os.makedirs(femtoSipPath)
-            r = requests.get("https://github.com/astoeckel/femtosip/raw/6589a42760287aac2db1645d20abc057c18b0f25/femtosip.py")
+            r = requests.get("https://raw.githubusercontent.com/eaudunord/femtosip/master/femtosip.py")
             r.raise_for_status()
             with open(femtoSipPath+"/femtosip.py",'wb') as f:
                 text = r.content.decode('ascii','ignore').encode()
@@ -142,6 +143,7 @@ def xbandListen(modem):
     return ("nothing","")
                     
 def ringPhone(oppIP,modem):
+    import femtosip.femtosip as sip_ring
     opponent = oppIP
     PORT = 65433
     sock_send = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -155,7 +157,7 @@ def ringPhone(oppIP,modem):
     try:
         sock_send.connect((opponent, PORT))
         sock_send.sendall(b"RESET")
-        
+        sentCall = time.time()
         while True:
             ready = select.select([sock_send], [], [],0)
             if ready[0]:
@@ -191,10 +193,14 @@ def ringPhone(oppIP,modem):
                 elif data == b'RESPONSE':
                     modem._serial.write(b'\x01')
                     return opponent
+            if time.time() - sentCall > 90:
+                logger.info("opponent tunnel not responding")
+                return "hangup"
 
 
     except socket.error:
-        return "error"
+        logger.info("couldn't connect to opponent")
+        return "hangup"
     
 def getserial():
   # Extract serial from cpuinfo file

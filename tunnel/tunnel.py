@@ -135,6 +135,7 @@ def process():
     xbandMatching = False
     xbandTimer = None
     xbandInit = False
+    openXband = False
 
     mode = "LISTENING"
 
@@ -155,8 +156,12 @@ def process():
                     xbandInit = True
                 if time.time() - xbandTimer > 900:
                     xbandMatching = False
+                    xband.closeXband()
+                    openXband = False
                     continue
-                xband.openXband()
+                if openXband == False:
+                    xband.openXband()
+                    openXband = True
                 xbandResult,opponent = xband.xbandListen(modem)
                 if xbandResult == "connected":
                     netlink.netlink_exchange("waiting","connected",opponent,ser=modem._serial)
@@ -166,6 +171,7 @@ def process():
                     modem.start_dial_tone()
                     xbandMatching = False
                     xband.closeXband()
+                    openXband = False
 
             modem.update()
             char = modem._serial.read(1).strip().decode()
