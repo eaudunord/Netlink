@@ -1,4 +1,4 @@
-#xband_version=202305051723
+#xband_version=202305061551
 import sys
 
 if __name__ == "__main__":
@@ -203,18 +203,19 @@ def ringPhone(oppIP,modem):
         return "hangup"
     
 def getserial():
-  # Extract serial from cpuinfo file
-  cpuserial = "0000000000000000"
-  try:
-    f = open('/proc/cpuinfo','r')
-    for line in f:
-      if line[0:6]=='Serial':
-        cpuserial = line[10:26]
-    f.close()
-  except:
-    cpuserial = "ERROR000000000"
-
-  return cpuserial
+    cpuserial = b"0000000000000000"
+    if osName == 'posix':
+        try:
+            f = open('/proc/cpuinfo','r')
+            for line in f:
+                if line[0:6]=='Serial':
+                    cpuserial = line[10:26].encode()
+                f.close()
+        except:
+            cpuserial = b"ERROR000000000"
+    else:
+        cpuserial = subprocess.check_output(["wmic","cpu","get","ProcessorId","/format:csv"]).strip().split(b",")[-1]
+    return cpuserial
     
 def xbandServer(modem):
     modem._serial.timeout = 1
@@ -225,7 +226,7 @@ def xbandServer(modem):
     s.settimeout(15)
     s.connect(("xbserver.retrocomputing.network", 56969))
     # cpu = subprocess.check_output(["wmic","cpu","get","ProcessorId","/format:csv"]).strip().split(b",")[-1]
-    hwid = getserial().encode()
+    hwid = getserial()
     sdata = b"///////PI-" + hwid + b"\x0a"
     sentid = 0
     logger.info("connected")
