@@ -1,4 +1,4 @@
-#tunnel_version=202305051723
+#tunnel_version=202305052004
 import sys
 import os
 from datetime import datetime
@@ -126,7 +126,7 @@ def do_netlink(side,dial_string,modem):
         time.sleep(4)
         modem.send_command('ATH0')
         return
-    netlink.netlink_exchange(side,state,opponent)
+    netlink.netlink_exchange(side,state,opponent,ser=modem._serial)
 
 
 def process():
