@@ -1,4 +1,4 @@
-#xband_version=202305061551
+#xband_version=202305061624
 import sys
 
 if __name__ == "__main__":
@@ -210,11 +210,14 @@ def getserial():
             for line in f:
                 if line[0:6]=='Serial':
                     cpuserial = line[10:26].encode()
-                f.close()
+            f.close()
+            logger.info("Found valid CPU ID")
         except:
             cpuserial = b"ERROR000000000"
+            logger.info("Couldn't find valid CPU ID, using error ID")
     else:
         cpuserial = subprocess.check_output(["wmic","cpu","get","ProcessorId","/format:csv"]).strip().split(b",")[-1]
+        logger.info("Found valid CPU ID")
     return cpuserial
     
 def xbandServer(modem):
