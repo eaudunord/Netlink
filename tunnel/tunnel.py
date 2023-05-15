@@ -1,4 +1,4 @@
-#tunnel_version=202305052004
+#tunnel_version=202305141942
 import sys
 import os
 from datetime import datetime
@@ -116,7 +116,7 @@ device_and_speed = [com_port,115200]
 modem = Modem(device_and_speed[0], device_and_speed[1])
 
 
-def do_netlink(side,dial_string,modem):
+def do_netlink(side,dial_string,modem,saturn=True):
     # ser = serial.Serial(device_and_speed[0], device_and_speed[1], timeout=0.02)
     state, opponent  = netlink.netlink_setup(side,dial_string,modem)
     if state == "failed":
@@ -126,7 +126,10 @@ def do_netlink(side,dial_string,modem):
         time.sleep(4)
         modem.send_command('ATH0')
         return
-    netlink.netlink_exchange(side,state,opponent,ser=modem._serial)
+    if saturn == False:
+        netlink.kddi_exchange(side,state,opponent,ser=modem._serial)
+    else:
+        netlink.netlink_exchange(side,state,opponent,ser=modem._serial)
 
 
 def process():
@@ -164,7 +167,7 @@ def process():
                     openXband = True
                 xbandResult,opponent = xband.xbandListen(modem)
                 if xbandResult == "connected":
-                    netlink.netlink_exchange("waiting","connected",opponent,ser=modem._serial)
+                    xband.netlink_exchange("waiting","connected",opponent,ser=modem._serial)
                     logger.info("Xband Disconnected")
                     mode = "LISTENING"
                     modem.connect()
@@ -260,7 +263,7 @@ def process():
                 
                 try:
                     if client == "xband":
-                        modem.init_xband()
+                        xband.init_xband(modem)
                         result = xband.ringPhone(oppIP,modem)
                         if result == "hangup":
                             mode = "LISTENING"
@@ -291,9 +294,9 @@ def process():
             
         elif mode == "NETLINK_CONNECTED":
             if client == "xband":
-                netlink.netlink_exchange("calling","connected",oppIP,ser=modem._serial)
+                xband.netlink_exchange("calling","connected",oppIP,ser=modem._serial)
             else:
-                do_netlink(side,dial_string,modem)
+                do_netlink(side,dial_string,modem,saturn=saturn)
             logger.info("Netlink Disconnected")
             # time.sleep(5)
             mode = "LISTENING"

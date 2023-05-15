@@ -1,4 +1,4 @@
-#modemClass_version=202305051723
+#modemClass_version=202305141942
 import os
 import serial
 from datetime import datetime
@@ -147,7 +147,7 @@ class Modem(object):
         print('Command: %s' % final_command.decode())
 
         start = datetime.now()
-
+        errorCount = 0
         line = b""
         while True:
             new_data = self._serial.readline().strip() #this is blocking
@@ -160,6 +160,11 @@ class Modem(object):
                 if resp in line:
                     if resp != b"OK":
                         print('Response: %s' % line.decode())
+                        if resp == b"ERROR" and errorCount < 4:
+                            errorCount += 1
+                            time.sleep(0.5)
+                            self._serial.write(final_command)
+                            break
                     # logger.info(line[line.find(resp):])
                     return  # We are done
 
@@ -186,9 +191,3 @@ class Modem(object):
                     self._dial_tone_counter = 0
                 self._serial.write(byte)
                 self._time_since_last_dial_tone = now
-
-    def init_xband(self):
-        self.connect_netlink(speed=57600,timeout=0.05,rtscts=True)
-        self.query_modem(b'AT%E0')
-        self.query_modem(b"AT\V1%C0")
-        self.query_modem(b'AT+MS=V22b')
