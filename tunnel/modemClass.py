@@ -1,4 +1,4 @@
-#modemClass_version=202305141942
+#modemClass_version=202305142148
 import os
 import serial
 from datetime import datetime
@@ -164,6 +164,7 @@ class Modem(object):
                             errorCount += 1
                             time.sleep(0.5)
                             self._serial.write(final_command)
+                            line = b""
                             break
                     # logger.info(line[line.find(resp):])
                     return  # We are done
