@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202305141942
+#netlink_version=202305171754
 import sys
 
 if __name__ == "__main__":
@@ -20,7 +20,9 @@ import threading
 import binascii
 import select
 import os
+import platform
 
+pythonVer = platform.python_version_tuple()[0]
 osName = os.name
 if osName == 'posix':
     logger = logging.getLogger('dreampi')
@@ -73,6 +75,7 @@ def digit_parser(modem):
 
     elif char == '#':
         dial_string = ""
+        last_heard = time.time()
         while (True):
             if time.time() - last_heard > 3: #if more than 3 seconds of silence, assume done dialing.
                 break
@@ -90,6 +93,7 @@ def digit_parser(modem):
                             break
                     if char in ip_digits:
                         dial_string += char
+                        last_heard = time.time()
                 except (TypeError, ValueError):#Dreampi originally tried to convert characters to int and passed on the exception raised for other characters. This shouldn't be needed anymore.
                     pass
         return {'client':'direct_dial','dial_string':dial_string,'side':'calling'}
@@ -348,6 +352,8 @@ def kddi_exchange(side,net_state,opponent,ser=ser):
         maxPing = 0
         maxJitter = 0
         recoveredCount = 0
+        firstRun = True
+        lastWrite = None
         if side == "waiting":
             oppPort = 20002
         if side == "calling":
@@ -416,7 +422,24 @@ def kddi_exchange(side,net_state,opponent,ser=ser):
                         currentSequence = int(sequence) + 1
                         
                         toSend = payload
-                        
+
+                        if firstRun == True:
+                            if pythonVer == '2':
+                                lastWrite = time.clock()
+                                firstRun = False
+                            else:
+                                lastWrite = time.perf_counter()
+                                firstRun = False
+                        elif firstRun == False:
+                            if pythonVer == '2':
+                                if time.clock() - lastWrite > 0.026:
+                                    logger.info('Late KDDI Packet')
+                                lastWrite = time.clock()
+                            else:
+                                if time.perf_counter() - lastWrite > 0.026:
+                                    logger.info('Late KDDI Packet')
+                                lastWrite = time.perf_counter()
+
                         ser.write(toSend)
                         if len(payload) > 0 and printout == True:
                             logger.info(binascii.hexlify(payload))
