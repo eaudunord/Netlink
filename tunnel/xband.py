@@ -442,6 +442,7 @@ def netlink_exchange(side,net_state,opponent,ser=ser):
         if side == "calling":
             Port = 20002
         udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        udp.setsockopt(socket.IPPROTO_IP, socket.IP_TOS, 184)
         udp.setblocking(0)
         udp.bind(('', Port))
         
