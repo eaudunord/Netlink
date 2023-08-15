@@ -1,4 +1,4 @@
-#tunnel_version=202304170905
+#tunnel_version=202308150954
 import sys
 import os
 from datetime import datetime
@@ -29,7 +29,7 @@ except:
 xbandnums = ["18002071194","19209492263","0120717360","0355703001"]
 
 def updater():
-    base_script_url = "https://raw.githubusercontent.com/eaudunord/Netlink/16bitXband/tunnel/"
+    base_script_url = "https://raw.githubusercontent.com/eaudunord/Netlink/latest/tunnel/"
     checkScripts = ['modemClass.py','tunnel.py','netlink.py']
     restartFlag = False
     for script in checkScripts:
