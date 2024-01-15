@@ -1,4 +1,4 @@
-#tunnel_version=202305141942
+#tunnel_version=202401151537
 import sys
 import os
 from datetime import datetime
@@ -78,7 +78,7 @@ def com_scanner():
     for i in range(1,25): # this should be a big enough range. USB com ports usually end up in the teens.
         osName = os.name
         if osName == 'posix': # should work on linux and Mac for USB modem, but untested.
-            com_port = "/dev/ttyACM%s" % i
+            com_port = "/dev/ttyACM%s" % (i-1)
         else:
             com_port = "COM%s" % i
         try:
@@ -101,7 +101,7 @@ def com_scanner():
 
 try:
     com_port = sys.argv[1] #script can be started with com port as an argument. If it isn't, we can scan for the modem.
-    if 'com' not in com_port.lower():
+    if not ('com' in com_port.lower() or '/dev' in com_port.lower()):
         raise IndexError
 except IndexError:
     com_scanner()
