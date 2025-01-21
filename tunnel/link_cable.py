@@ -7,7 +7,6 @@ import threading
 from modemClass import Modem
 import logging
 import os
-import binascii
 
 osName = os.name
 logging.basicConfig(level=logging.INFO)
@@ -175,7 +174,7 @@ def serial_exchange(side,state,opponent):
                             continue
                         elif packetSet == b'RESET_COUNT_SHIRO':
                             # If peer reset their tunnel, we need to reset our sequence counter.
-                            print("sequence reset. Peer reconnected")
+                            print("Packet sequence reset")
                             currentSequence = 0
                             continue
                         elif packetSet == b'PONG_SHIRO':
@@ -237,8 +236,6 @@ def serial_exchange(side,state,opponent):
                                 break
 
                     except IndexError:
-                        print("non-tunnel data discarded")
-                        print(packets)
                         continue
                 except ConnectionResetError:
                     continue
@@ -264,17 +261,10 @@ def serial_exchange(side,state,opponent):
                 except ConnectionResetError:
                     pass
                 ping = time.time()
-            # new = ser.read(1)
-            # raw_input = new + ser.read(ser.in_waiting)
-            # if raw_input == b'SCIXB STA':
-            #     print("init")
-            #     raw_input = raw_input +ser.read(2)
-            #if len(raw_input) > 0:
-                #print(raw_input.decode())
             raw_input = b''
             if ser.in_waiting > 0:
                 raw_input += ser.read(ser.in_waiting)
-            if len(raw_input) > 0:
+            if len(raw_input) > 0 and printout:
                 print(raw_input)
             try:
                 payload = raw_input
