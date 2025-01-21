@@ -7,3 +7,10 @@ releases/
 versions/
 tunnel/errors_dumps/
 connector_send_rcv.py
+sip_ring.py
+xband_config.py
+ring_test.bat
+functionality_tests/logs/
+tunnel/femtosip/
+tunnel/linkCable.py
+tunnel/linkCable.bat
