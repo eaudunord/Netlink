@@ -14,3 +14,4 @@ functionality_tests/logs/
 tunnel/femtosip/
 tunnel/linkCable.py
 tunnel/linkCable.bat
+functionality_tests/
