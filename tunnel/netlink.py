@@ -17,10 +17,15 @@ import serial
 from datetime import datetime
 import logging
 import threading
-import binascii
 import select
 import os
 import platform
+import requests
+try:
+    import stun
+except ImportError:
+    os.system('pip install pystun3')
+    import stun
 
 pythonVer = platform.python_version_tuple()[0]
 osName = os.name
@@ -42,6 +47,7 @@ data = []
 state = "starting"
 poll_rate = 0.01
 ser = ""
+matching = True
 
 def digit_parser(modem):
     char = modem._serial.read(1).decode() #first character was <DLE>, what's next?
@@ -96,20 +102,26 @@ def digit_parser(modem):
                         last_heard = time.time()
                 except (TypeError, ValueError):#Dreampi originally tried to convert characters to int and passed on the exception raised for other characters. This shouldn't be needed anymore.
                     pass
-        return {'client':'direct_dial','dial_string':dial_string,'side':'calling'}
+        if len(dial_string) == 3 and dial_string[0] == "0": # This condition indicates a game is waiting for a call
+            return {'client':'direct_dial','dial_string':dial_string,'side':'waiting'}
+        else:
+            return {'client':'direct_dial','dial_string':dial_string,'side':'calling'}
     else:
         return "nada"
 
 def initConnection(ms,dial_string):
+    global matching
     opponent = dial_string.replace('*','.')
     ip_set = opponent.split('.')
     for i,set in enumerate(ip_set): #socket connect doesn't like leading zeroes now
         fixed = str(int(set))
         ip_set[i] = fixed
     opponent = ('.').join(ip_set)
+    registered = False
 
     if ms == "waiting":
         logger.info("I'm waiting")
+        registered = False
         timerStart = time.time()
         PORT = 65432
         tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -118,12 +130,14 @@ def initConnection(ms,dial_string):
         tcp.listen(5)
         while True:
             if time.time() - timerStart > 120:
-                return ["failed",""]
+                if len(dial_string) == 3 and registered:
+                    timed_out(dial_string[-2:], my_ip)
+                return ["failed", None]
             ready = select.select([tcp], [], [],0)
             if ready[0]:
                 conn, addr = tcp.accept()
                 opponent = addr[0]
-                logger.info('connection from %s' % opponent)
+                logger.info('Connection from %s' % opponent)
                 while True:
                     try:
                         data = conn.recv(1024)
@@ -137,47 +151,178 @@ def initConnection(ms,dial_string):
                         logger.info("Ready for Data Exchange!")
                         #tcp.shutdown(socket.SHUT_RDWR) #best practice is to close your socket, but it gives me issues.
                         #tcp.close()
-                        return ["connected",opponent]
+                        if registered:
+                            timed_out(dial_string[-2:], my_ip)
+                        return ["connected", (opponent, 20002)]
                     if not data:
-                        logger.info("failed to init")
+                        logger.info("Failed to init")
                         #tcp.shutdown(socket.SHUT_RDWR)
                         #tcp.close()
                         break
+            if len(dial_string) == 3: # matchmaking is on by default
+                if matching:
+                    my_ip, ext_port = getWanIP(20001) # doing this every loop is intentional. Acts as an NAT keep-alive.
+                    if my_ip:
+                        if not registered:
+                            if register(dial_string[-2:], my_ip, ext_port):
+                                registered = True
+                        elif registered:
+                            status, opponent = get_status(dial_string[-2:], my_ip)
+                            if status:
+                                logger.info("Sending Ring")
+                                ser.write(("RING\r\n").encode())
+                                ser.write(("CONNECT\r\n").encode())
+                                logger.info("Ready for Data Exchange!")
+                                return ["connected",opponent]
+                    else:
+                        logger.info("Couldn't get WAN information. Won't register for match. Trying again in 3 seconds")
+                    time.sleep(3)
+
+
     if ms == "calling":
         logger.info("I'm calling")
-        PORT = 65432
-        tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        tcp.settimeout(120)
-        try:
-            tcp.connect((opponent, PORT))
-            tcp.sendall(b"readyip")
-            ready = select.select([tcp], [], [])
-            if ready[0]:
-                data = tcp.recv(1024)
-                if data == b'g2gip':
-                    logger.info("Ready for Data Exchange!")
-                    #tcp.shutdown(socket.SHUT_RDWR)
-                    #tcp.close()
-                    return ["connected",opponent]
-        except socket.error:
-            return ["failed", ""]
-                
+        if len(dial_string) > 3: # treat the call as a direct dial attempt
+            PORT = 65432
+            tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            tcp.settimeout(120)
+            try:
+                tcp.connect((opponent, PORT))
+                tcp.sendall(b"readyip")
+                ready = select.select([tcp], [], [])
+                if ready[0]:
+                    data = tcp.recv(1024)
+                    if data == b'g2gip':
+                        logger.info("Ready for Data Exchange!")
+                        #tcp.shutdown(socket.SHUT_RDWR)
+                        #tcp.close()
+                        return ["connected", (opponent, 20001)]
+            except socket.error:
+                return ["failed", ""]
+        else:
+            if dial_string == "999":
+                matching = False
+                logger.info("Matchmaking disabled")
+                return ["failed", None]
+            elif dial_string == "888":
+                matching = True
+                logger.info("Matchmaking enabled")
+                return ["failed", None]
+            else: # connect to the matchmaking server and get a match
+                my_ip, ext_port = getWanIP(20002)
+                if my_ip:
+                    status, opponent = get_match(dial_string[-2:], my_ip, ext_port)
+                    if status:
+                        return ["connected", opponent]
+                    else:
+                        return ["failed", None]
+                else:
+                    return ["failed", None]
+                         
     else:
-        return ["error","error"]
+        return ["failed", None]
 
 
+def register(game_id, ip_address, port):
+    params = {"action" : 'wait', 
+                  "gameID" : game_id, 
+                  "client_ip" : ip_address, 
+                  "port" : port, 
+                  "key" :'mySuperSecretSaturnKey1234'
+            }
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36"}
+    url = "https://saturn.dreampipe.net/match_service.php?"
+    try:
+        r=requests.get(url, params=params, headers=headers)
+        r.raise_for_status()
+        logger.info("Registered for a match")
+        return True
+    except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
+        logger.info("Couldn't connect to matching server")
+        logger.info(e)
+        return False
+    
+def get_status(game_id, ip_address):
+    params = {"action" : 'status', 
+                  "gameID" : game_id, 
+                  "client_ip" : ip_address, 
+                  "key" :'mySuperSecretSaturnKey1234'
+            }
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36"}
+    url = "https://saturn.dreampipe.net/match_service.php?"
+    try:
+        r=requests.get(url, params=params, headers=headers)
+        r.raise_for_status()
+        status = r.json()["status"]
+        if status == "matched":
+            dial_string = r.json()["opponent ip_address"]
+            address, oppPort = dial_string
+            oppPort = int(oppPort)
+            opponent = '.'.join(str(int(address[i:i+3])) for i in range(0, len(address), 3))
+            return [True, (opponent, oppPort)]
+        else:
+            return [False, (None, None)]
+        
+    except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError):
+        logger.info("Couldn't connect to matching server")
+        return [False, (None, None)]
 
+def get_match(game_id, ip_address, port):
+    params = {"action" : 'match', 
+                  "gameID" : game_id, 
+                  "client_ip" : ip_address, 
+                  "port" : port, 
+                  "key" :'mySuperSecretSaturnKey1234'
+            }
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36"}
+    url = "https://saturn.dreampipe.net/match_service.php?"
+    try:
+        r=requests.get(url, params=params, headers=headers)
+        r.raise_for_status()
+        status = r.json()["status"]
+        logger.info(status)
+        if status == "found opponent":
+            dial_string = r.json()["opponent ip_address"]
+            address, oppPort = dial_string
+            oppPort = int(oppPort)
+            opponent = '.'.join(str(int(address[i:i+3])) for i in range(0, len(address), 3))
+            return [True, (opponent, oppPort)]
+        else:
+            return [False, (None, None)]
+    except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
+        logger.info("Couldn't connect to matching server")
+        logger.info(e)
+        return [False, (None, None)]
 
-            
+def timed_out(game_id, ip_address):
+    params = {"action" : 'timeout', 
+                  "gameID" : game_id, 
+                  "client_ip" : ip_address, 
+                  "key" :'mySuperSecretSaturnKey1234'
+            }
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36"}
+    url = "https://saturn.dreampipe.net/match_service.php?"
+    try:
+        r=requests.get(url, params=params, headers=headers)
+        r.raise_for_status()
+        logger.info("Wait timed out. Deregistered from matching server")
+    except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError):
+        logger.info("Couldn't connect to matching server")
+        return False, None
 
-         
+def getWanIP(port):
+    try:
+        nat_type, external_ip, external_port = stun.get_ip_info(source_port=port, stun_host="stun2.l.google.com", stun_port=19302)
+        external_ip = "".join([x.zfill(3) for x in external_ip.split(".")])
+    except AttributeError:
+        logger.info("Couldn't get WAN information")
+        return None, None
+    return external_ip, external_port
 
 
 def netlink_setup(side,dial_string,modem):
     global ser
     ser = modem._serial
     state = initConnection(side,dial_string)
-    #time.sleep(0.2)
     return state
 
 def netlink_exchange(side,net_state,opponent,ser=ser):
@@ -193,14 +338,10 @@ def netlink_exchange(side,net_state,opponent,ser=ser):
         maxPing = 0
         maxJitter = 0
         recoveredCount = 0
-        if side == "waiting":
-            oppPort = 20002
-        if side == "calling":
-            oppPort = 20001
         while(state != "netlink_disconnected"):
             ready = select.select([udp],[],[],0) #polling select
             if ready[0]:
-                packetSet = udp.recv(1024)
+                packetSet, remote = udp.recvfrom(1024)
                 
                 #start pinging code block
                 if pinging == True:
@@ -208,9 +349,9 @@ def netlink_exchange(side,net_state,opponent,ser=ser):
                     if pingCount >= 30:
                         pingCount = 0
                         ping = time.time()
-                        udp.sendto(b'PING_SHIRO', (opponent,oppPort))
+                        udp.sendto(b'PING_SHIRO', opponent)
                     if packetSet == b'PING_SHIRO':
-                        udp.sendto(b'PONG_SHIRO', (opponent,oppPort))
+                        udp.sendto(b'PONG_SHIRO', opponent)
                         continue
                     elif packetSet == b'PONG_SHIRO':
                         pong = time.time()
@@ -263,25 +404,17 @@ def netlink_exchange(side,net_state,opponent,ser=ser):
                         toSend = payload
                         
                         ser.write(toSend)
-                        if len(payload) > 0 and printout == True:
-                            logger.info(binascii.hexlify(payload))
                         if packetNum == 0: # if the first packet was the processed packet,  no need to go through the rest
                             break
 
                 except IndexError:
                     continue
                     
-        logger.info("listener stopped")        
+        logger.info("Listener stopped")        
                 
     def sender(side,opponent):
         global state
-        logger.info("sending")
-        first_run = False
-        if side == "waiting":
-            oppPort = 20002
-        if side == "calling":
-            oppPort = 20001
-        last = 0
+        logger.info("Sending")
         sequence = 0
         packets = []
         ser.timeout = None
@@ -292,15 +425,10 @@ def netlink_exchange(side,net_state,opponent,ser=ser):
             if b"NO CARRIER" in raw_input:
                 print('')
                 logger.info("NO CARRIER")
-                # ser.write(("ATs86?\r\n").encode())
-                # response = ser.readline().strip()
-                # if len(response) == 0:
-                #     response = ser.readline().strip()
-                # print(response)
                 state = "netlink_disconnected"
                 time.sleep(1)
                 udp.close()
-                logger.info("sender stopped")
+                logger.info("Sender stopped")
                 return
             
             try:
@@ -315,7 +443,7 @@ def netlink_exchange(side,net_state,opponent,ser=ser):
                     for i in range(2): #send the data twice. May help with drops or latency    
                         ready = select.select([],[udp],[]) #blocking select  
                         if ready[1]:
-                            udp.sendto(packetSplit.join(packets), (opponent,oppPort))
+                            udp.sendto(packetSplit.join(packets), opponent)
                                 
                     sequence+=1
             except:
@@ -442,19 +570,17 @@ def kddi_exchange(side,net_state,opponent,ser=ser):
                                 lastWrite = time.perf_counter()
 
                         ser.write(toSend)
-                        if len(payload) > 0 and printout == True:
-                            logger.info(binascii.hexlify(payload))
                         if packetNum == 0: # if the first packet was the processed packet,  no need to go through the rest
                             break
 
                 except IndexError:
                     continue
                     
-        logger.info("listener stopped")        
+        logger.info("Listener stopped")        
                 
     def sender(side,opponent):
         global state
-        logger.info("sending")
+        logger.info("Sending")
         first_run = False
         if side == "waiting":
             oppPort = 20002
@@ -473,7 +599,7 @@ def kddi_exchange(side,net_state,opponent,ser=ser):
                 state = "netlink_disconnected"
                 time.sleep(1)
                 udp.close()
-                logger.info("sender stopped")
+                logger.info("Sender stopped")
                 return
             raw_input = b''
             new = ser.read(1)
