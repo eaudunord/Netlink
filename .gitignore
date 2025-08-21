@@ -15,3 +15,5 @@ tunnel/femtosip/
 tunnel/linkCable.py
 tunnel/linkCable.bat
 functionality_tests/
+tunnel/audio_files
+tunnel/link_cable.py
