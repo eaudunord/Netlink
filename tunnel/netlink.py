@@ -24,6 +24,15 @@ import requests
 import subprocess
 import errno
 try:
+    import sh
+except ModuleNotFoundError:
+    pass
+import ipaddress
+try:
+    import dreampi
+except ImportError:
+    pass
+try:
     import stun
 except ImportError:
     os.system('pip install pystun3')
@@ -65,6 +74,18 @@ class Netlink:
         self.xband_sock = None
         self.xband_listening = False
         self.sip_ring = None
+        self.usb_baud = 115200
+        self.usb = None
+        # check for serial port on linux
+        if self.osName == 'posix':
+            try:
+                self.usb = serial.Serial("/dev/ttyUSB0", baudrate=self.usb_baud, rtscts=True)
+                self.usb.timeout = 0.01
+                self.logger.info("USB-Serial adapter found!")
+            except:
+                self.logger.info("No USB-Serial adapter detected")
+                self.usb = None
+
 
     def digit_parser(self):
         last_heard = time.time()
@@ -848,10 +869,87 @@ class Netlink:
         self.mode = "idle"
         self.state = "starting"
 
+    def serial_poll(self):
+        if self.usb:
+            try:
+                payload = self.usb.read(self.usb.in_waiting)
+                if len(payload) > 0:
+                    self.logger.info("serial port: %s" % payload)
+                    if payload[:2] == b'AT':
+                        if payload == b'AT\r\n' or payload == b'AT\n':
+                            self.usb.write(b'OK\r\n')
+                        elif payload == b'ATZ\r\n' or payload == b'ATZ\n':
+                            self.usb.write(b'OK\r\n')
+                        elif payload[:4] == b'ATDT':
+                            self.usb.write(b'CONNECT 115200\r\n')
+                            time.sleep(5) #some games need a sleep before turning on pppd
+                            self.logger.info("Call answered!")
+                            # os.system("pon -detach crtscts lcp-echo-interval 10 lcp-echo-failure 2 lock local proxyarp {}:{} /dev/ttyUSB0 115200".format(this_ip,dreamcast_ip))
+                            self.logger.info(subprocess.check_output(["pon", "dreamcast", "lcp-echo-interval", "10", "local", "crtscts", "lcp-echo-failure","2","lcp-max-terminate","1","/dev/ttyUSB0", "115200"]).decode())
+                            self.logger.info("CONNECT")
+                            self.mode = "serial_ppp"
+                            if self.usb and self.usb.is_open:
+                                self.usb.flush() #added a flush, is data hanging on in the buffer?
+                                self.usb.close()
+                                self.usb = None
+                            self.modem.stop_dial_tone()
+                        else:
+                            self.usb.write(b'OK\r\n')
+            except IOError:
+                self.logger.info("serial device disconnected")
+                self.usb = None
+        else:
+            return 0
+        
+    def serial_ppp(self):
+        with open("/etc/ppp/options", "r") as f:
+            for line in f:
+                if "ms-dns" in line:
+                    dreamcast_ip = line.split(" ")[1].replace("\n", "")
+        tun_ip =  dreampi.get_ip_address("tun0")
+        if tun_ip is not None:
+            tun_ip_obj = ipaddress.IPv4Address(unicode(tun_ip,'utf-8'))
+            tun_dc_ip = tun_ip_obj + 1
+            dreampi.create_alias_interface(dreamcast_ip, str(tun_dc_ip))
+        from dcnow import DreamcastNowService
+        dcnow = DreamcastNowService()
+        dcnow.go_online(dreamcast_ip)
+
+            
+        for line in sh.tail("-f", "/var/log/messages", "-n", "1", _iter=True):
+            if "pppd" in line and "Exit" in line:#wait for pppd to execute the ip-down script
+                self.logger.info("Detected modem hang up, going back to listening")
+                break
+            if "pppd" in line and "Connection terminated." in line:
+                self.logger.info("pppd ip-down finished")
+                try:
+                    print(subprocess.check_output(['sudo', 'poff', '-a']))
+                    time.sleep(5)
+                    print(subprocess.check_output(['sudo', 'poff', '-a']))
+                    # why do I have to do this twice? pppd doesn't detect a hangup when ppp disconnects.
+                    # a cleaner solution would be preferable but this works
+                except Exception as e:
+                    print(e)
+        dreampi.remove_alias_interface()
+        dcnow.go_offline() #changed dcnow to wait 15 seconds for event instead of sleeping. Should be faster.
+        self.mode = "idle"
+        self.modem.connect()
+        self.modem.start_dial_tone()
+        # modem = Modem(device_and_speed[0], device_and_speed[1], dial_tone_enabled)
+        try:
+            self.usb = serial.Serial("/dev/ttyUSB0", baudrate=self.usb_baud, rtscts=True)
+            self.usb.timeout = 0.01
+        except:
+            self.logger.info("No USB-Serial adapter detected")
+            self.usb = None
+        self.logger.info('Reset serial port')
+
     def poll(self):
         if time.time() - self.xband_timer > 900 and self.xband_listening:
             self.logger.info("Stop xband listening")
             self.close_xband()
+        if self.usb:
+            self.serial_poll()
         if self.mode == "idle":
             return 0
         elif self.mode == "PPP":
@@ -878,6 +976,8 @@ class Netlink:
             else:
                 self.netlink_exchange(state = "connected", opponent = (self.dial_string, 20001))
                 self.reset()
+        elif self.mode == "serial_ppp":
+            self.serial_ppp()
         else:
             return 0
         return 0
