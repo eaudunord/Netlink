@@ -84,9 +84,9 @@ class Netlink:
             try:
                 self.usb = serial.Serial("/dev/ttyUSB0", baudrate=self.usb_baud, rtscts=True, exclusive=True)
                 self.usb.timeout = self.usb_timeout
-                self.logger.info("USB-Serial adapter found!")
+                self.logger.info("USB-Serial device found! Serial port monitoring started. PPP available.")
             except serial.SerialException:
-                self.logger.info("No USB-Serial adapter detected")
+                # self.logger.info("No USB-Serial adapter detected")
                 self.usb = None
 
 
@@ -933,7 +933,7 @@ class Netlink:
                         else:
                             self.usb.write(b'OK\r\n')
             except IOError:
-                self.logger.info("serial device disconnected")
+                self.logger.info("USB serial device disconnected. Stopping serial port monitoring")
                 self.usb = None
         else:
             return 0
