@@ -1,4 +1,4 @@
-#tunnel_version=202401151537
+#tunnel_version=2025.09.15.1938
 import sys
 import os
 from datetime import datetime
@@ -14,8 +14,8 @@ logger = logging.getLogger('Netlink')
 
 
 def updater():
-    base_script_url = "https://raw.githubusercontent.com/eaudunord/Netlink/latest/tunnel/"
-    checkScripts = ['modemClass.py','tunnel.py','netlink.py','xband.py']
+    base_script_url = "https://raw.githubusercontent.com/eaudunord/Netlink/main/tunnel/"
+    checkScripts = ['modemClass.py','tunnel.py','netlink.py']
     restartFlag = False
     for script in checkScripts:
         url = base_script_url+script
@@ -69,7 +69,6 @@ else:
 
 import netlink
 from modemClass import Modem
-import xband
 
 
 def com_scanner():

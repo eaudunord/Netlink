@@ -7,3 +7,4 @@ modemClass.py is borrowed/lifted and slightly modified from the Dreampi script. 
 [Original Dreampi Script](https://github.com/Kazade/dreampi)
 
 You should be able to use this for other generic modem to modem communications over the net. You will need to modify how the modem waiting for a call initializes. If you can modify the init string, appending "dt0" should cause that modem to dial out and wait for a "RING". See the README in the releases for how to call the waiting modem.
+
