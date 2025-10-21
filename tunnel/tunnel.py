@@ -1,4 +1,4 @@
-#tunnel_version=202401151537
+#tunnel_version=2025.10.21.1122
 import sys
 import os
 from datetime import datetime
@@ -15,10 +15,11 @@ logger = logging.getLogger('Netlink')
 
 def updater():
     base_script_url = "https://raw.githubusercontent.com/eaudunord/Netlink/latest/tunnel/"
-    checkScripts = ['modemClass.py','tunnel.py','netlink.py','xband.py']
+    checkScripts = [base_script_url + 'modemClass.py', base_script_url + 'tunnel.py', base_script_url + 'netlink.py', 'https://raw.githubusercontent.com/eaudunord/dc-taisen-netplay/main/link_cable.py' ]
     restartFlag = False
-    for script in checkScripts:
-        url = base_script_url+script
+    for item in checkScripts:
+        url = item
+        script = item.split("/")[-1]
         try:
             r=requests.get(url, stream = True)
             r.raise_for_status()
