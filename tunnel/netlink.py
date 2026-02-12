@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202508311113
+#netlink_version=2026.02.11.2107
 import sys
 
 if __name__ == "__main__":
@@ -79,10 +79,12 @@ class Netlink:
         self.usb = None
         self.tun_dc_ip = None
         self.dreamcast_ip = None
+        self.usb_serial_port = "/dev/ttyUSB0"
         # check for serial port on linux
         if self.osName == 'posix':
             try:
-                self.usb = serial.Serial("/dev/ttyUSB0", baudrate=self.usb_baud, rtscts=True, exclusive=True)
+                self.usb = serial.Serial(self.usb_serial_port, baudrate=self.usb_baud, rtscts=False, exclusive=True)
+                self.usb.rts = True
                 self.usb.timeout = self.usb_timeout
                 self.logger.info("USB-Serial device found! Serial port monitoring started. PPP available.")
             except serial.SerialException:
@@ -907,7 +909,7 @@ class Netlink:
                             
                             pppd_args = [
                                 "pppd",
-                                "/dev/ttyUSB0", str(self.usb_baud),
+                                self.usb_serial_port, str(self.usb_baud),
                                 "lcp-echo-interval", "5",
                                 "local",
                                 "lcp-echo-failure", "2",
@@ -965,7 +967,8 @@ class Netlink:
         dcnow.go_offline() #changed dcnow to wait 15 seconds for event instead of sleeping. Should be faster.
         self.mode = "idle"
         try:
-            self.usb = serial.Serial("/dev/ttyUSB0", baudrate=self.usb_baud, rtscts=True, exclusive=True)
+            self.usb = serial.Serial(self.usb_serial_port, baudrate=self.usb_baud, rtscts=False, exclusive=True)
+            self.usb.rts = True
             self.usb.timeout = self.usb_timeout
         except:
             self.logger.info("No USB-Serial adapter detected")
