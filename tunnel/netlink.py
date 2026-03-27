@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202602112107
+#netlink_version=202603271607
 import sys
 
 if __name__ == "__main__":
@@ -776,6 +776,8 @@ class Netlink:
                         self.modem._serial.write(b'\x01')
                         if self.modem._serial.cd:
                             result = ("connected",opponent)
+                            break
+                        
                     if time.time() - callTime > 120:
                         break
         return result
