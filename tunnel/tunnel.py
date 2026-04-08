@@ -8,9 +8,32 @@ logging.basicConfig(level=logging.INFO)
 import serial
 import requests
 import platform
-com_port = None
-logger = logging.getLogger('Netlink')
+import argparse
+# com_port = None
+logger = logging.getLogger('Tunnel')
+# verbose = False
+# update = True
 
+# define script arguments
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    '--verbose',
+    action = 'store_true',
+)
+parser.add_argument(
+    '--com'
+)
+parser.add_argument('--noupdate',
+    action='store_false',
+)
+parser.add_argument('--printout',
+    action='store_true',
+)
+args = parser.parse_args()
+com_port = args.com
+verbose = args.verbose
+update = args.noupdate
+printout = args.printout
 
 
 def updater():
@@ -63,16 +86,18 @@ def updater():
         print('Main script updated. Please restart the tunnel')
         sys.exit()
 
-if 'noUpdate' in sys.argv:
-    print("updates disabled")
-else:
+if update:
     updater()
+else:
+    print("updates disabled")
+    
 
 import netlink
 from modemClass import Modem
 
 
 def com_scanner():
+    modem = None
     global com_port
     speed = 115200
     for i in range(1,25): # this should be a big enough range. USB com ports usually end up in the teens.
@@ -97,24 +122,27 @@ def com_scanner():
         except IOError as e:
             com_port = None
         finally:
-            modem.disconnect()
+            if modem:
+                modem.disconnect()
 
 try:
-    com_port = sys.argv[1] #script can be started with com port as an argument. If it isn't, we can scan for the modem.
-    if not ('com' in com_port.lower() or '/dev' in com_port.lower()):
-        raise IndexError
+    if com_port:
+        if not ('com' in com_port.lower() or '/dev' in com_port.lower()):
+            raise IndexError  
+    else:
+        com_scanner()  
 except IndexError:
     com_scanner()
-    if com_port:
-        print("Modem found at %s" % com_port)
-    else:
-        print("No modem found")
-        sys.exit()
+if com_port:
+    print("Modem found at %s" % com_port)
+else:
+    print("No modem found")
+    sys.exit()
 
 
 device_and_speed = [com_port,115200]
 modem = Modem(device_and_speed[0], device_and_speed[1])
-netlink = netlink.Netlink(modem)
+netlink = netlink.Netlink(modem, verbose = verbose, printout = printout)
 
 def process():
     

@@ -18,3 +18,4 @@ functionality_tests/
 tunnel/audio_files
 tunnel/link_cable.py
 tunnel/xband.py
+tunnel/tunnel.bat
