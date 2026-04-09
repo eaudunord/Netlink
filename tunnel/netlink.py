@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202604082150
+#netlink_version=202604082204
 import sys
 
 if __name__ == "__main__":
@@ -163,7 +163,7 @@ class Netlink:
                     continue
                 if "version=" in line:
                     try:
-                        return int(line.split("version=", 1)[1].strip())
+                        return int(line.replace(" ","").split("version=", 1)[1].strip())
                     except ValueError:
                         return None
             return None
