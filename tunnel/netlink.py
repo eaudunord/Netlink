@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202603271607
+#netlink_version=202604082150
 import sys
 
 if __name__ == "__main__":
@@ -264,8 +264,10 @@ class Netlink:
                                     self.logger.info("fetched missing dcnet.rpi successfully")
                             except requests.exceptions.RequestException as e:
                                 self.logger.info("Error downloading dcnet.rpi: %s", e)
+                
 
                 self.logger.info("DCNet configuration read")
+                self.logger.info("DCNet enabled: %s", self.dcnet)
 
             except KeyError:
                 pass
