@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202604082209
+#netlink_version=202604092122
 import sys
 
 if __name__ == "__main__":
@@ -27,6 +27,7 @@ import re
 import binascii
 import configparser
 import random
+import stat
 try:
     import sh
 except ModuleNotFoundError:
@@ -232,6 +233,7 @@ class Netlink:
 
         # If running on dreampi check further for DCNet config and serial port config
         if self.osName == 'posix':
+            
             try:
                 serial_cfg = cfg['Serial Port']
                 self.usb_serial_port = None if serial_cfg.get('disabled') == 'yes' else self.usb_serial_port
@@ -264,7 +266,12 @@ class Netlink:
                                     self.logger.info("fetched missing dcnet.rpi successfully")
                             except requests.exceptions.RequestException as e:
                                 self.logger.info("Error downloading dcnet.rpi: %s", e)
-                
+                    # Check if executable - current or freshly downloaded file
+                    if os.path.isfile(self.dcnet_path):
+                        st = os.stat(self.dcnet_path)
+                        if not bool(st.st_mode & stat.S_IXUSR):
+                            os.chmod(self.dcnet_path, st.st_mode | stat.S_IXUSR)
+                            self.logger.info("dcnet.rpi made executable")
 
                 self.logger.info("DCNet configuration read")
                 self.logger.info("DCNet enabled: %s", self.dcnet)
