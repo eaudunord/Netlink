@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202604092122
+#netlink_version=202604272200
 import sys
 
 if __name__ == "__main__":
@@ -207,8 +207,34 @@ class Netlink:
 
         # --- Write update ---
         elif (local_version is None) or (local_version < upstream_version):
+            # Sections to preserve from local config
+            preserve_sections = ['Serial Port', 'DCNet']
+            preserved = {}
+
+            if local_data:
+                local_cfg = configparser.ConfigParser()
+                local_cfg.read_string(local_data.decode("utf-8"))
+                for section in preserve_sections:
+                    if local_cfg.has_section(section):
+                        preserved[section] = dict(local_cfg.items(section))
+
+            # Write upstream as the new base
             with open(local_config, "wb") as f:
                 f.write(upstream_data)
+
+            # Re-apply preserved sections
+            if preserved:
+                merged_cfg = configparser.ConfigParser()
+                merged_cfg.read(local_config)
+                for section, values in preserved.items():
+                    if not merged_cfg.has_section(section):
+                        merged_cfg.add_section(section)
+                    for key, val in values.items():
+                        merged_cfg.set(section, key, val)
+                with open(local_config, "w") as f:
+                    merged_cfg.write(f)
+                self.logger.info("Preserved local config sections: %s", list(preserved.keys()))
+
             self.logger.info("config updated (v%s to v%s)", local_version, upstream_version)
 
         if not os.path.isfile(local_config):
@@ -274,7 +300,9 @@ class Netlink:
                             self.logger.info("dcnet.rpi made executable")
 
                 self.logger.info("DCNet configuration read")
-                self.logger.info("DCNet enabled: %s", self.dcnet)
+                self.logger.info("DCNet available: %s", self.dcnet)
+                if self.dcnet:
+                    self.logger.info("Add *69 to outside dial prefix to activate DCNet")
 
             except KeyError:
                 pass
@@ -330,6 +358,10 @@ class Netlink:
             self.dial_string = ""
             self.logger.debug("xband server called")
             return {'client':self.mode, 'dial_string':raw_string}
+        elif raw_string == "0642542154":
+            self.mode = "capcom"
+            self.dial_string = ""
+            return {'client': self.mode, 'dial_string': raw_string}
         elif raw_string.startswith("#") and raw_string.endswith("#"):
             dial_string = raw_string.replace("#","")
             if len(dial_string) == 3 and dial_string[0] == "0": # This condition indicates a game is waiting for a call
@@ -612,6 +644,7 @@ class Netlink:
         last_ping_sent = 0
         lastPing = 0
         ping = 0
+        pong_counter = 0
         pong = time.time()
         jitterStore = []
         pingStore = []
@@ -642,6 +675,7 @@ class Netlink:
                         pass
                     continue
                 elif packetSet == b'PONG_SHIRO':
+                    pong_counter += 1
                     if not established:
                         self.logger.info("Connection established")
                         established = True
@@ -664,6 +698,10 @@ class Netlink:
                     pingAvg = round(sum(pingStore)/len(pingStore),2)
                     if self.osName != 'posix':
                         sys.stdout.write('Ping: %s Max: %s | Jitter: %s Max: %s | Avg Ping: %s |  Avg Jitter: %s | Recovered Packets: %s         \r' % (pingResult,maxPing,jitter, maxJitter,pingAvg,jitterAvg,recoveredCount))
+                    elif self.osName == 'posix' and pong_counter >= 10:
+                        self.logger.info('Ping: %s Max: %s | Jitter: %s Max: %s | Avg Ping: %s |  Avg Jitter: %s | Recovered Packets: %s' % (pingResult,maxPing,jitter, maxJitter,pingAvg,jitterAvg,recoveredCount))
+                    if pong_counter >= 10:
+                        pong_counter = 0
                     lastPing = pingResult
                     continue
                 elif packetSet == b'OPEN_SHIRO':
@@ -731,6 +769,14 @@ class Netlink:
                 self.close_udp()
                 self.logger.info("Sender stopped")
                 return
+            if not self.modem._serial.cd:
+                print('')
+                self.logger.info("NO CD")
+                self.state = "netlink_disconnected"
+                time.sleep(1)
+                self.close_udp()
+                self.logger.info("Sender stopped")
+                return                
             
             try:
                 payload = raw_input
@@ -781,7 +827,7 @@ class Netlink:
             self.modem.connect_netlink(speed=57600,timeout=0.01,rtscts = True) #non-blocking version
             self.modem.query_modem(b'AT%E0\V1')
             self.modem.query_modem(b'AT%C0\N3')
-            # self.modem.query_modem(b'AT&C1&D2')
+            self.modem.query_modem(b'AT&C1&D2')
             # self.modem.query_modem(b'AT+MS=V32b,1,14400,14400,14400,14400') probably not necessary to be so explicit with rates and modulation
             # self.modem.query_modem(b"ATA", timeout=30, response = "CONNECT")
         except IOError:
@@ -1114,7 +1160,7 @@ class Netlink:
 
     def reset(self):
         self.modem.stop_dial_tone()
-        self.modem.reset()
+        # self.modem.reset()
         self.modem.connect()
         try:
             if self.modem._serial.in_waiting:
@@ -1153,44 +1199,21 @@ class Netlink:
                             elif payload[:4] == b'ATDT':
                                 self.usb.write(b'CONNECT ' + str(self.usb.baudrate).encode() + b'\r\n')
                                 self.logger.info("Call answered!")
-                                tun_ip =  dreampi.get_ip_address("tun0")
-                                if tun_ip is not None:
-                                    with open("/etc/ppp/options", "r") as f:
-                                        for line in f:
-                                            if "ms-dns" in line:
-                                                self.dreamcast_ip = line.split(" ")[1].replace("\n", "")
-                                    tun_ip_obj = ipaddress.IPv4Address(unicode(tun_ip,'utf-8'))
-                                    self.tun_dc_ip = tun_ip_obj + 1
-                                    tun_this_ip = self.tun_dc_ip + 1
-                                    dreampi.create_alias_interface(self.dreamcast_ip, str(self.tun_dc_ip))
-                                    
-                                else:
-                                    with open("/etc/ppp/peers/dreamcast", "r") as f:
-                                        for line in f:
-                                            if ":" in line:
-                                                self.dreamcast_ip = line.split(":")[1].replace("\n", "")
-                                    self.tun_dc_ip = self.dreamcast_ip
-                                    tun_this_ip = ipaddress.IPv4Address(unicode(self.dreamcast_ip,'utf-8')) + 1
-                                
-                                pppd_args = [
-                                    "pppd",
-                                    self.usb_serial_port, str(self.usb.baudrate),
-                                    "lcp-echo-interval", "5",
+
+                                options = [
                                     "local",
+                                    "lcp-echo-interval", "5",
                                     "lcp-echo-failure", "2",
                                     "lcp-max-terminate", "1",
                                     "novj",
-                                    str(tun_this_ip) + ":" + str(self.tun_dc_ip),
-                                    "ms-dns", str(self.tun_dc_ip) if tun_ip is not None else str(tun_this_ip),
                                     "debug",
                                     "ktune",
                                     "noccp",
                                     "noauth"
-                                ]
+                                ]    
 
-                                time.sleep(5)
+                                self.pppd_run(device = self.usb_serial_port, speed = self.usb.baudrate, options = options )
 
-                                self.logger.info(subprocess.check_output(pppd_args).decode())
                                 if self.usb and self.usb.is_open:
                                     self.usb.flush() #added a flush, is data hanging on in the buffer?
                                     self.usb.close()
@@ -1502,6 +1525,86 @@ class Netlink:
             return bool(output.strip())
         except subprocess.CalledProcessError:
             return False
+        
+    def capcom(self):
+        if self.osName != 'posix':
+            return
+        self.modem.stop_dial_tone()
+        if self.modem_answer():
+            self.logger.info("Call answered!")
+            options = [
+                "ktune",
+                "noccp",
+                "novj",
+                "proxyarp",
+                "lcp-echo-interval", "1",
+                "lcp-echo-failure", "4",
+                "lcp-max-terminate", "1",
+                "lcp-restart", "1"
+            ]
+            self.pppd_run(device = self.modem._device, speed = self.modem._speed, options = options)
+            self.modem.disconnect()
+            from dcnow import DreamcastNowService
+            dcnow = DreamcastNowService()
+            dcnow.go_online("")
+            for line in sh.tail("-f", "/var/log/messages", "-n", "1", _iter=True):
+                if "pppd" in line and "Exit" in line:#wait for pppd to execute the ip-down script
+                    self.logger.info("Detected modem hang up, going back to listening")
+                    break
+            dreampi.remove_alias_interface()
+            dcnow.go_offline() #changed dcnow to wait 15 seconds for event instead of sleeping. Should be faster.
+            self.mode = "idle"
+            self.modem.connect()
+            # If the ip-down was triggered by lcp echo failure, the modem often gets stuck in data mode. Fix that here. Harmless if modem isn't stuck.
+            time.sleep(1.5)
+            for i in range(3): # escape sequence
+                self.modem._serial.write(b'+')
+                time.sleep(0.2)
+            time.sleep(1.5)
+            self.modem.query_modem("ATH0")
+            time.sleep(1)
+            self.modem.start_dial_tone()
+        else:
+            self.modem.shake_it_off()
+            self.reset()
+        
+    def pppd_run(self, device = None, speed = None, options = []):
+        # self.logger.info([device, speed, options])
+        if self.osName != 'posix':
+            return
+        tun_ip =  dreampi.get_ip_address("tun0")
+        if tun_ip is not None:
+            with open("/etc/ppp/options", "r") as f:
+                for line in f:
+                    if "ms-dns" in line:
+                        self.dreamcast_ip = line.split(" ")[1].replace("\n", "")
+            tun_ip_obj = ipaddress.IPv4Address(unicode(tun_ip,'utf-8'))
+            self.tun_dc_ip = tun_ip_obj + 1
+            tun_this_ip = self.tun_dc_ip + 1
+            dreampi.create_alias_interface(self.dreamcast_ip, str(self.tun_dc_ip))
+            
+        else:
+            with open("/etc/ppp/peers/dreamcast", "r") as f:
+                for line in f:
+                    if ":" in line:
+                        self.dreamcast_ip = line.split(":")[1].replace("\n", "")
+            self.tun_dc_ip = self.dreamcast_ip
+            tun_this_ip = ipaddress.IPv4Address(unicode(self.dreamcast_ip,'utf-8')) + 1
+        
+        pppd_args = [
+            "pppd",
+            device, str(speed),
+            str(tun_this_ip) + ":" + str(self.tun_dc_ip),
+            "ms-dns", str(self.tun_dc_ip) if tun_ip is not None else str(tun_this_ip)
+        ]
+
+        pppd_args.extend(options)
+
+        time.sleep(5)
+        #  self.logger.info(pppd_args)
+
+        self.logger.info(subprocess.check_output(pppd_args).decode())
+
 
     def poll(self):
         if time.time() - self.xband_timer > 900 and self.xband_listening:
@@ -1542,6 +1645,8 @@ class Netlink:
             self.reset()
         elif self.mode == "dcnet":
             self.dcnet_connect()
+        elif self.mode == "capcom":
+            self.capcom()
         else:
             return 0
         return 0
