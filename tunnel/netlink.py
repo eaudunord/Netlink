@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202604272200
+#netlink_version=202605012142
 import sys
 
 if __name__ == "__main__":
@@ -290,8 +290,10 @@ class Netlink:
                                             f.write(chunk)
                                     self.dcnet = True
                                     self.logger.info("fetched missing dcnet.rpi successfully")
-                            except requests.exceptions.RequestException as e:
+                            except (requests.exceptions.RequestException) as e:
                                 self.logger.info("Error downloading dcnet.rpi: %s", e)
+                            except (FileNotFoundError) as e:
+                                self.logger.info("Check dcnet location in config. Error: %s", e)
                     # Check if executable - current or freshly downloaded file
                     if os.path.isfile(self.dcnet_path):
                         st = os.stat(self.dcnet_path)
