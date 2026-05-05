@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202604272200
+#netlink_version=202605051301
 import sys
 
 if __name__ == "__main__":
@@ -45,11 +45,6 @@ except ImportError:
     
 class Netlink:
     pythonVer = platform.python_version_tuple()[0]
-    osName = os.name
-    if osName == 'posix': # should work on linux and Mac for USB modem, but untested.
-        femtoSipPath = "/home/pi/dreampi/femtosip"
-    else:
-        femtoSipPath = os.path.realpath('./')+"/femtosip"
     # logger.setLevel(logging.INFO)
     packetSplit = b"<packetSplit>"
     dataSplit = b"<dataSplit>"
@@ -82,6 +77,7 @@ class Netlink:
         self.dreamcast_ip = None
         self.usb_serial_port = "/dev/ttyUSB0"
         self.verbose = verbose
+        self.osName = self.get_platform()
         self.dcnet = False
         self.dcnet_path = "/home/pi/dreampi/dcnet.rpi"
         # set up a way to use dial prefixes to change functionality
@@ -90,7 +86,12 @@ class Netlink:
             "modified": 0
         }
 
-        if self.osName == 'posix':
+        if self.osName == 'raspberry':
+            self.femtoSipPath = "/home/pi/dreampi/femtosip"
+        else:
+            self.femtoSipPath = os.path.realpath('./')+"/femtosip"
+
+        if self.osName == 'raspberry':
             # Use existing logger exactly as-is
             self.logger = logging.getLogger('dreampi')
 
@@ -119,7 +120,7 @@ class Netlink:
         self.read_config()
 
         # check for serial port on linux and configure
-        if self.osName == 'posix':
+        if self.osName in ['raspberry', 'linux']:
             if self.usb_serial_port:
                 try:
                     self.usb = serial.Serial(self.usb_serial_port, baudrate=self.usb_baud, rtscts=False, exclusive=True)
@@ -133,8 +134,31 @@ class Netlink:
                 self.usb = None
         self.logger.debug("Netlink class initialized")
 
+    def get_platform(self):
+        os_name = os.name
+        if os_name == 'nt':
+            return "windows"
+        elif os_name == 'posix':
+            # check pi
+            try:
+                with open('/sys/firmware/devicetree/base/model', 'r') as f:
+                    if 'raspberry pi' in f.read().lower():
+                        return "raspberry"
+            except FileNotFoundError:
+                pass
+            # check PC linux
+            if platform.system().lower() == "linux" and platform.machine().lower() in ["x86_64", "i386", "i686", "amd64"]:
+                return "linux"
+            # check mac
+            if platform.system() == "Darwin":
+                return "mac"
+            # catch anything else
+            return "unknown"
+        else:
+            return "unknown"
+
     def read_config(self):
-        if self.osName == 'posix' and os.path.isfile("/boot/noautoupdates.txt"):
+        if self.osName == 'raspberry' and os.path.isfile("/boot/noautoupdates.txt"):
             self.logger.info("Dreampi script auto updates are disabled")
             return
         
@@ -257,8 +281,8 @@ class Netlink:
         if self.servers:
             self.logger.info("Server ID codes loaded: %s", list(self.servers.keys()))
 
-        # If running on dreampi check further for DCNet config and serial port config
-        if self.osName == 'posix':
+        # If running on dreampi or linux check further for DCNet config and serial port config
+        if self.osName in ['raspberry', 'linux']:
             
             try:
                 serial_cfg = cfg['Serial Port']
@@ -275,7 +299,7 @@ class Netlink:
                 self.dcnet = True if dcnet_cfg.get('enabled') == 'yes' else False
                 self.dcnet_path = dcnet_cfg.get('dcnet_path', self.dcnet_path)
 
-                if self.dcnet:
+                if self.dcnet and self.osName == 'raspberry':
                     if not os.path.isfile(self.dcnet_path):
                         self.dcnet = False
                         self.logger.warning("dcnet.rpi not found at %s" % self.dcnet_path)
@@ -290,8 +314,10 @@ class Netlink:
                                             f.write(chunk)
                                     self.dcnet = True
                                     self.logger.info("fetched missing dcnet.rpi successfully")
-                            except requests.exceptions.RequestException as e:
+                            except (requests.exceptions.RequestException) as e:
                                 self.logger.info("Error downloading dcnet.rpi: %s", e)
+                            except (FileNotFoundError) as e:
+                                self.logger.info("Check dcnet location in config. Error: %s", e)
                     # Check if executable - current or freshly downloaded file
                     if os.path.isfile(self.dcnet_path):
                         st = os.stat(self.dcnet_path)
@@ -696,9 +722,9 @@ class Netlink:
                         jitterStore.pop()
                     jitterAvg = round(sum(jitterStore)/len(jitterStore),2)
                     pingAvg = round(sum(pingStore)/len(pingStore),2)
-                    if self.osName != 'posix':
+                    if self.osName in ['windows', 'linux']:
                         sys.stdout.write('Ping: %s Max: %s | Jitter: %s Max: %s | Avg Ping: %s |  Avg Jitter: %s | Recovered Packets: %s         \r' % (pingResult,maxPing,jitter, maxJitter,pingAvg,jitterAvg,recoveredCount))
-                    elif self.osName == 'posix' and pong_counter >= 10:
+                    elif self.osName == 'raspberry' and pong_counter >= 10:
                         self.logger.info('Ping: %s Max: %s | Jitter: %s Max: %s | Avg Ping: %s |  Avg Jitter: %s | Recovered Packets: %s' % (pingResult,maxPing,jitter, maxJitter,pingAvg,jitterAvg,recoveredCount))
                     if pong_counter >= 10:
                         pong_counter = 0
@@ -846,7 +872,7 @@ class Netlink:
 
     def getserial(self):
         cpuserial = b"0000000000000000"
-        if self.osName == 'posix':
+        if self.osName in ['raspberry', 'linux', 'mac']:
             try:
                 f = open('/proc/cpuinfo','r')
                 for line in f:
@@ -1527,12 +1553,14 @@ class Netlink:
             return False
         
     def capcom(self):
-        if self.osName != 'posix':
+        if self.osName != 'raspberry':
             return
         self.modem.stop_dial_tone()
         if self.modem_answer():
             self.logger.info("Call answered!")
             options = [
+                "auth",
+                "plugin", "pap_noempty.so",
                 "ktune",
                 "noccp",
                 "novj",
@@ -1570,7 +1598,7 @@ class Netlink:
         
     def pppd_run(self, device = None, speed = None, options = []):
         # self.logger.info([device, speed, options])
-        if self.osName != 'posix':
+        if self.osName != 'raspberry':
             return
         tun_ip =  dreampi.get_ip_address("tun0")
         if tun_ip is not None:
