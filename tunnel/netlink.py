@@ -45,11 +45,6 @@ except ImportError:
     
 class Netlink:
     pythonVer = platform.python_version_tuple()[0]
-    osName = os.name
-    if osName == 'posix': # should work on linux and Mac for USB modem, but untested.
-        femtoSipPath = "/home/pi/dreampi/femtosip"
-    else:
-        femtoSipPath = os.path.realpath('./')+"/femtosip"
     # logger.setLevel(logging.INFO)
     packetSplit = b"<packetSplit>"
     dataSplit = b"<dataSplit>"
