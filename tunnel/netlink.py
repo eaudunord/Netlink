@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202605051301
+#netlink_version=202605101044
 import sys
 
 if __name__ == "__main__":
@@ -144,7 +144,7 @@ class Netlink:
                 with open('/sys/firmware/devicetree/base/model', 'r') as f:
                     if 'raspberry pi' in f.read().lower():
                         return "raspberry"
-            except FileNotFoundError:
+            except (OSError, IOError):
                 pass
             # check PC linux
             if platform.system().lower() == "linux" and platform.machine().lower() in ["x86_64", "i386", "i686", "amd64"]:
@@ -316,7 +316,7 @@ class Netlink:
                                     self.logger.info("fetched missing dcnet.rpi successfully")
                             except (requests.exceptions.RequestException) as e:
                                 self.logger.info("Error downloading dcnet.rpi: %s", e)
-                            except (FileNotFoundError) as e:
+                            except (OSError, IOError) as e:
                                 self.logger.info("Check dcnet location in config. Error: %s", e)
                     # Check if executable - current or freshly downloaded file
                     if os.path.isfile(self.dcnet_path):
@@ -1507,7 +1507,7 @@ class Netlink:
     
     def modem_answer(self):
         try:
-            self.modem.query_modem(b"ATA", timeout=30, response = "CONNECT")
+            self.modem.query_modem(b"ATA", timeout=60, response = "CONNECT")
         except IOError:
             return False
         return True
