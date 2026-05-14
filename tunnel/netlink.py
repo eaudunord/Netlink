@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202605101044
+#netlink_version=202605141825
 import sys
 
 if __name__ == "__main__":
@@ -79,6 +79,7 @@ class Netlink:
         self.verbose = verbose
         self.osName = self.get_platform()
         self.dcnet = False
+        self.dcnet_port = "7654"
         self.dcnet_path = "/home/pi/dreampi/dcnet.rpi"
         # set up a way to use dial prefixes to change functionality
         self.dial_modifier = {
@@ -275,8 +276,9 @@ class Netlink:
                 self.servers[code] = dict(cfg.items(section))
 
         # Validate server codes. Don't just accept anything
-        pattern = r'^1994\d{2}$'
-        self.servers = {k: v for k, v in self.servers.items() if bool(re.match(pattern, k))}
+        # pattern = r'^1994\d{2}$'
+        # self.servers = {k: v for k, v in self.servers.items() if bool(re.match(pattern, k))}
+        self.servers = {k: v for k, v in self.servers.items()}
 
         if self.servers:
             self.logger.info("Server ID codes loaded: %s", list(self.servers.keys()))
@@ -387,6 +389,12 @@ class Netlink:
         elif raw_string == "0642542154":
             self.mode = "capcom"
             self.dial_string = ""
+            return {'client': self.mode, 'dial_string': raw_string}
+        elif bool(re.match(r"^0053600100(0[1-9]|10)$", raw_string)):
+            self.mode = "dcnet"
+            self.dcnet_port = "7656"
+            self.dial_string = ""
+            self.logger.info("Calling VOOT server")
             return {'client': self.mode, 'dial_string': raw_string}
         elif raw_string.startswith("#") and raw_string.endswith("#"):
             dial_string = raw_string.replace("#","")
@@ -1305,6 +1313,43 @@ class Netlink:
 
         else:
             self.logger.info("Couldn't find a matching config")
+    
+    @staticmethod
+    def ppp_fix_frame_delimiters(data, prev_ended_with_flag=False):
+        """
+        Ensure every PPP frame has explicit start and end 0x7e delimiters.
+
+        Replaces every lone 0x7e (shared boundary between adjacent frames)
+        with 0x7e 0x7e. Works by first normalizing all runs of flags down
+        to singles, then doubling them all uniformly.
+
+        Idempotent: already-correct data round-trips unchanged.
+
+        Returns (fixed_bytes, ended_with_flag) for cross-chunk state.
+        """
+        FLAG = b'\x7e'
+        DOUBLE = b'\x7e\x7e'
+
+        if not data:
+            return data, prev_ended_with_flag
+
+        # data[-1:] returns a single-byte bytes object on both Py2 and Py3,
+        # unlike data[-1] which returns an int on Py3 and a str on Py2.
+        ended_with_flag = data[-1:] == FLAG
+
+        # Normalize: collapse any existing 0x7e 0x7e runs down to single 0x7e
+        while DOUBLE in data:
+            data = data.replace(DOUBLE, FLAG)
+
+        # Now every 0x7e is a single shared delimiter — double them all
+        data = data.replace(FLAG, DOUBLE)
+
+        # Cross-chunk boundary: previous chunk ended with a flag and this
+        # chunk starts with non-flag payload — prepend the opening flag.
+        if prev_ended_with_flag and data[:1] != FLAG:
+            data = FLAG + data
+
+        return data, ended_with_flag
 
     def netlink_transparent_server(self, server_cfg):
         """
@@ -1316,6 +1361,7 @@ class Netlink:
         host = server_cfg.get('host', '127.0.0.1')
         port = int(server_cfg.get('port', '8020'))
         label = server_cfg.get('name', host)
+        fix_ppp = server_cfg.get('ppp_fix_delimiters', 'false').lower() in ('true', '1', 'yes')
 
         self.modem.stop_dial_tone()
 
@@ -1327,7 +1373,6 @@ class Netlink:
             return
 
         # 2. Connect to TCP server IMMEDIATELY — no serial flush!
-        # The Saturn sends BBS commands right away and the server must see them.
         try:
             s = socket.socket()
             s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
@@ -1339,9 +1384,12 @@ class Netlink:
             self.logger.info("%s: Connection failed: %s", label, e)
             return
 
-        # 3. Transparent relay — no flush, no auth, no filtering
+        # 3. Transparent relay
         self.modem._serial.timeout = 0
         modem_tail = b""
+        srv_prev_flag = False
+        sat_prev_flag = False
+
         while True:
             had_data = False
 
@@ -1349,6 +1397,10 @@ class Netlink:
             try:
                 data = s.recv(4096)
                 if data:
+                    if fix_ppp:
+                        data, srv_prev_flag = self.ppp_fix_frame_delimiters(
+                            data, srv_prev_flag
+                        )
                     self.modem._serial.write(data)
                     had_data = True
                 else:
@@ -1366,6 +1418,10 @@ class Netlink:
                     if b"NO CARRIER" in modem_tail:
                         self.logger.info("%s: NO CARRIER", label)
                         break
+                    if fix_ppp:
+                        data, sat_prev_flag = self.ppp_fix_frame_delimiters(
+                            data, sat_prev_flag
+                        )
                     s.send(data)
 
             # Carrier Detect check
@@ -1516,10 +1572,11 @@ class Netlink:
         self.modem.stop_dial_tone()
         if self.modem_answer():
             time.sleep(3)
-            self.logger.info("Call answered!")
+            self.logger.info("DCNet Call answered!")
             path = self.dcnet_path
             process = os.path.basename(path)
-            cmd = [path, "-t", "{}".format(self.modem.device_name), "-b", "{}".format(self.modem.device_speed)]
+            cmd = [path, "-t", "{}".format(self.modem.device_name), "-b", "{}".format(self.modem.device_speed), "-p", self.dcnet_port]
+            self.logger.info(cmd)
 
             subprocess.Popen(cmd)
             
@@ -1673,6 +1730,7 @@ class Netlink:
             self.reset()
         elif self.mode == "dcnet":
             self.dcnet_connect()
+            self.dcnet_port = "7654" # reset to default
         elif self.mode == "capcom":
             self.capcom()
         else:
