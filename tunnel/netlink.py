@@ -28,6 +28,11 @@ import binascii
 import configparser
 import random
 import stat
+import hashlib
+try:
+    import queue
+except ImportError:
+    import Queue as queue
 try:
     import sh
 except ModuleNotFoundError:
@@ -322,6 +327,31 @@ class Netlink:
                                 self.logger.info("Check dcnet location in config. Error: %s", e)
                     # Check if executable - current or freshly downloaded file
                     if os.path.isfile(self.dcnet_path):
+                        # check local vs upstream version
+                        try:
+                            local_hash = self.calculate_sha1(self.dcnet_path)
+                            dcnet_info = self.raw_github_sha(dcnet_cfg.get('dcnet_url'))
+                            if local_hash == dcnet_info:
+                                self.logger.info("dcnet.rpi up to date")
+                            else:
+                                try:
+                                    with requests.get(dcnet_url, stream=True) as r:
+                                        r.raise_for_status()
+                                        with open(self.dcnet_path, "wb") as f:
+                                            for chunk in r.iter_content(chunk_size=8192):
+                                                f.write(chunk)
+                                        self.dcnet = True
+                                        self.logger.info("fetched updated dcnet.rpi successfully")
+                                except (requests.exceptions.RequestException) as e:
+                                    self.logger.info("Error downloading dcnet.rpi: %s", e)
+                                except (OSError, IOError) as e:
+                                    self.logger.info("Check dcnet location in config. Error: %s", e)
+                        except (requests.exceptions.RequestException, ValueError):
+                            self.logger.info("Error getting upstream hash. Moving on")
+                        except IOError:
+                            self.logger.info("Error calculating local dcnet.rpi hash. Moving on")
+                            pass
+
                         st = os.stat(self.dcnet_path)
                         if not bool(st.st_mode & stat.S_IXUSR):
                             os.chmod(self.dcnet_path, st.st_mode | stat.S_IXUSR)
@@ -334,6 +364,64 @@ class Netlink:
 
             except KeyError:
                 pass
+
+    def calculate_sha1(self, file_path):
+        sha1 = hashlib.sha1()
+        file_size = os.path.getsize(file_path)
+        header = "blob {}\0".format(file_size)
+        # py3 needs bytes
+        if not isinstance(header, bytes):
+            header = header.encode("utf-8")
+
+        sha1.update(header)
+        try:
+            with open(file_path, "rb") as f:
+                while True:
+                    chunk = f.read(8192)
+                    if not chunk:
+                        break
+                    sha1.update(chunk)
+            return sha1.hexdigest()
+        except (OSError, IOError):
+            raise IOError
+        
+    def raw_github_sha(self, raw_url):
+        SHA_RE = re.compile(r'"sha"\s*:\s*"([0-9a-f]{40})"')
+        parts = raw_url.split("/")
+        if len(parts) < 7 or parts[2] != "raw.githubusercontent.com":
+            raise ValueError("Invalid raw.githubusercontent.com URL")
+        user = parts[3]
+        repo = parts[4]
+        ref_ = parts[5]
+        filepath = "/".join(parts[6:])
+
+        api_url = (
+            "https://api.github.com/repos/"
+            "{}/{}/contents/{}?ref={}"
+        ).format(user, repo, filepath, ref_)
+
+        r = requests.get(api_url, stream=True, timeout=10)
+
+        try:
+            r.raise_for_status()
+            buf = ""
+            for chunk in r.iter_content(chunk_size=128):
+                if not chunk:
+                    continue
+                if not isinstance(chunk, str):
+                    chunk = chunk.decode("utf-8", "ignore")
+                buf += chunk
+                match = SHA_RE.search(buf)
+                if match:
+                    return match.group(1)
+                # Keep enough overlap in case `"sha": "..."`
+                # is split across chunks.
+                if len(buf) > 512:
+                    buf = buf[-256:]
+        finally:
+            r.close()
+
+        raise ValueError("SHA not found in GitHub API response")
 
     def hexlify(self, data):
         return ' '.join('{:02X}'.format(ord(c) if isinstance(c, str) else c) for c in data)
@@ -1352,90 +1440,153 @@ class Netlink:
         return data, ended_with_flag
 
     def netlink_transparent_server(self, server_cfg):
-        """
-        Transparent proxy handler for BBS-protocol games (e.g. Dragon's Dream).
-        Answers modem, connects to TCP server, relays ALL data bidirectionally.
-        Does NOT flush serial buffer after CONNECT — the Saturn sends BBS
-        commands immediately and the server must see them.
-        """
         host = server_cfg.get('host', '127.0.0.1')
         port = int(server_cfg.get('port', '8020'))
         label = server_cfg.get('name', host)
         fix_ppp = server_cfg.get('ppp_fix_delimiters', 'false').lower() in ('true', '1', 'yes')
 
+        READ_SIZE = 4096
+        QUEUE_SIZE = 128
+
         self.modem.stop_dial_tone()
 
-        # 1. Answer the call
-        if self.modem_answer():
-            self.logger.info("%s: Modem Linked", label)
-        else:
+        if not self.modem_answer():
             self.logger.info("%s: ATA failed", label)
             return
 
-        # 2. Connect to TCP server IMMEDIATELY — no serial flush!
+        self.logger.info("%s: Modem Linked", label)
+
         try:
-            s = socket.socket()
-            s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            s.settimeout(5)
-            s.connect((host, port))
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            sock.settimeout(5)
+            sock.connect((host, port))
+            sock.settimeout(None)  # blocking mode
             self.logger.info("%s: Tunnel Established to %s:%d", label, host, port)
-            s.setblocking(False)
         except Exception as e:
             self.logger.info("%s: Connection failed: %s", label, e)
             return
 
-        # 3. Transparent relay
-        self.modem._serial.timeout = 0
-        modem_tail = b""
-        srv_prev_flag = False
-        sat_prev_flag = False
+        ser = self.modem._serial
+        ser.timeout = 0.05   # portable low-latency blocking-ish read
 
-        while True:
-            had_data = False
+        stop = threading.Event()
+        to_sock = queue.Queue(QUEUE_SIZE)
+        to_ser = queue.Queue(QUEUE_SIZE)
 
-            # Server -> Saturn
-            try:
-                data = s.recv(4096)
-                if data:
+        modem_tail = [b""]
+        sat_prev_flag = [False]
+        srv_prev_flag = [False]
+
+        def serial_reader():
+            while not stop.is_set():
+                try:
+                    data = ser.read(READ_SIZE)
+                    if not data:
+                        continue
+
+                    modem_tail[0] = (modem_tail[0] + data)[-32:]
+                    if b"NO CARRIER" in modem_tail[0]:
+                        self.logger.info("%s: NO CARRIER", label)
+                        stop.set()
+                        break
+
                     if fix_ppp:
-                        data, srv_prev_flag = self.ppp_fix_frame_delimiters(
-                            data, srv_prev_flag
+                        data, sat_prev_flag[0] = self.ppp_fix_frame_delimiters(
+                            data, sat_prev_flag[0]
                         )
-                    self.modem._serial.write(data)
-                    had_data = True
-                else:
-                    self.logger.info("%s: Server closed connection", label)
+
+                    to_sock.put(data)
+                except Exception as e:
+                    self.logger.info("%s: serial read failed: %s", label, e)
+                    stop.set()
                     break
-            except socket.error:
+
+        def socket_reader():
+            while not stop.is_set():
+                try:
+                    data = sock.recv(READ_SIZE)
+                    if not data:
+                        self.logger.info("%s: Server closed connection", label)
+                        stop.set()
+                        break
+
+                    if fix_ppp:
+                        data, srv_prev_flag[0] = self.ppp_fix_frame_delimiters(
+                            data, srv_prev_flag[0]
+                        )
+
+                    to_ser.put(data)
+                except Exception as e:
+                    self.logger.info("%s: socket read failed: %s", label, e)
+                    stop.set()
+                    break
+
+        def serial_writer():
+            while not stop.is_set():
+                try:
+                    data = to_ser.get(True, 0.1)
+                except queue.Empty:
+                    continue
+
+                try:
+                    ser.write(data)
+                except Exception as e:
+                    self.logger.info("%s: serial write failed: %s", label, e)
+                    stop.set()
+                    break
+
+        def socket_writer():
+            while not stop.is_set():
+                try:
+                    data = to_sock.get(True, 0.1)
+                except queue.Empty:
+                    continue
+
+                try:
+                    # sendall handles partial TCP sends
+                    sock.sendall(data)
+                except Exception as e:
+                    self.logger.info("%s: socket write failed: %s", label, e)
+                    stop.set()
+                    break
+
+        threads = [
+            threading.Thread(target=serial_reader),
+            threading.Thread(target=socket_reader),
+            threading.Thread(target=serial_writer),
+            threading.Thread(target=socket_writer),
+        ]
+
+        for t in threads:
+            t.daemon = True
+            t.start()
+
+        try:
+            while not stop.is_set():
+                if not ser.cd:
+                    time.sleep(0.05)
+                    if not ser.cd:
+                        self.logger.info("%s: Saturn hung up", label)
+                        stop.set()
+                        break
+
+                time.sleep(0.1)
+
+        finally:
+            stop.set()
+
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except Exception:
                 pass
 
-            # Saturn -> Server
-            if self.modem._serial.in_waiting:
-                data = self.modem._serial.read(self.modem._serial.in_waiting)
-                if data:
-                    had_data = True
-                    modem_tail = (modem_tail + data)[-32:]
-                    if b"NO CARRIER" in modem_tail:
-                        self.logger.info("%s: NO CARRIER", label)
-                        break
-                    if fix_ppp:
-                        data, sat_prev_flag = self.ppp_fix_frame_delimiters(
-                            data, sat_prev_flag
-                        )
-                    s.send(data)
+            try:
+                sock.close()
+            except Exception:
+                pass
 
-            # Carrier Detect check
-            if not self.modem._serial.cd:
-                time.sleep(1.0)
-                if not self.modem._serial.cd:
-                    self.logger.info("%s: Saturn hung up", label)
-                    break
-
-            if not had_data:
-                time.sleep(0.005)
-
-        s.close()
-        self.logger.info("%s: Session Closed", label)
+            self.logger.info("%s: Session Closed", label)
 
     def netlink_standard_server(self, server_cfg):
         """
