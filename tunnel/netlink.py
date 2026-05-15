@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202605150925
+#netlink_version=202605151306
 import sys
 
 if __name__ == "__main__":
@@ -478,12 +478,12 @@ class Netlink:
             self.mode = "capcom"
             self.dial_string = ""
             return {'client': self.mode, 'dial_string': raw_string}
-        elif bool(re.match(r"^0053600100(0[1-9]|10)$", raw_string)):
-            self.mode = "dcnet"
-            self.dcnet_port = "7656"
-            self.dial_string = ""
-            self.logger.info("Calling VOOT server")
-            return {'client': self.mode, 'dial_string': raw_string}
+        # elif bool(re.match(r"^0053600100(0[1-9]|10)$", raw_string)):
+        #     self.mode = "dcnet"
+        #     self.dcnet_port = "7656"
+        #     self.dial_string = ""
+        #     self.logger.info("Calling VOOT server")
+        #     return {'client': self.mode, 'dial_string': raw_string}
         elif raw_string.startswith("#") and raw_string.endswith("#"):
             dial_string = raw_string.replace("#","")
             if len(dial_string) == 3 and dial_string[0] == "0": # This condition indicates a game is waiting for a call
