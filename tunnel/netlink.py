@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202605151306
+#netlink_version=202605171237
 import sys
 
 if __name__ == "__main__":
@@ -237,35 +237,45 @@ class Netlink:
 
         # --- Write update ---
         elif (local_version is None) or (local_version < upstream_version):
-            # Sections to preserve from local config
             preserve_sections = ['Serial Port', 'DCNet']
-            preserved = {}
+
+            def is_server_section(section):
+                return section.lower().startswith("server:")
+
+            local_cfg = configparser.ConfigParser()
+            upstream_cfg = configparser.ConfigParser()
 
             if local_data:
-                local_cfg = configparser.ConfigParser()
                 local_cfg.read_string(local_data.decode("utf-8"))
-                for section in preserve_sections:
-                    if local_cfg.has_section(section):
-                        preserved[section] = dict(local_cfg.items(section))
 
-            # Write upstream as the new base
-            with open(local_config, "wb") as f:
-                f.write(upstream_data)
+            upstream_cfg.read_string(upstream_data.decode("utf-8"))
 
-            # Re-apply preserved sections
-            if preserved:
-                merged_cfg = configparser.ConfigParser()
-                merged_cfg.read(local_config)
-                for section, values in preserved.items():
-                    if not merged_cfg.has_section(section):
-                        merged_cfg.add_section(section)
-                    for key, val in values.items():
-                        merged_cfg.set(section, key, val)
-                with open(local_config, "w") as f:
-                    merged_cfg.write(f)
-                self.logger.info("Preserved local config sections: %s", list(preserved.keys()))
+            # 1. Preserve whole local sections
+            for section in preserve_sections:
+                if local_cfg.has_section(section):
+                    if not upstream_cfg.has_section(section):
+                        upstream_cfg.add_section(section)
+                    for key, val in local_cfg.items(section):
+                        upstream_cfg.set(section, key, val)
 
-            self.logger.info("config updated (v%s to v%s)", local_version, upstream_version)
+            # 2. Preserve local-only server sections.
+            # If the same server section exists upstream, upstream wins.
+            for section in local_cfg.sections():
+                if is_server_section(section) and not upstream_cfg.has_section(section):
+                    upstream_cfg.add_section(section)
+                    for key, val in local_cfg.items(section):
+                        upstream_cfg.set(section, key, val)
+
+            # 3. Write merged result
+            with open(local_config, "w") as f:
+                upstream_cfg.write(f)
+
+            self.logger.info(
+                "config updated (v%s to v%s); preserved sections: %s",
+                local_version,
+                upstream_version,
+                preserve_sections
+            )
 
         if not os.path.isfile(local_config):
             self.logger.info("no config file found to parse")
@@ -328,9 +338,10 @@ class Netlink:
                     # Check if executable - current or freshly downloaded file
                     if os.path.isfile(self.dcnet_path):
                         # check local vs upstream version
+                        dcnet_url = dcnet_cfg.get('dcnet_url')
                         try:
                             local_hash = self.calculate_sha1(self.dcnet_path)
-                            dcnet_info = self.raw_github_sha(dcnet_cfg.get('dcnet_url'))
+                            dcnet_info = self.raw_github_sha(dcnet_url)
                             if local_hash == dcnet_info:
                                 self.logger.info("dcnet.rpi up to date")
                             else:
@@ -460,30 +471,24 @@ class Netlink:
         elif raw_string == "*70":
             self.logger.info("Call waiting disabled")
             self.mode = "idle"
-            self.dial_string = ""
+            # self.dial_string = ""
             return {'client':self.mode, 'dial_string':raw_string}
         elif raw_string == "*69":
             self.logger.info("*69: DCNet connection requested")
             if self.dcnet:
                 self.dial_modifier.update({"modifier":"dcnet","modified": time.time()})
             self.mode = "idle"
-            self.dial_string = ""
+            # self.dial_string = ""
             return {'client':self.mode, 'dial_string':raw_string}
         elif raw_string in ["18002071194","19209492263","0120717360","0355703001"]:
             self.mode = "xband_server"
-            self.dial_string = ""
+            # self.dial_string = ""
             self.logger.debug("xband server called")
             return {'client':self.mode, 'dial_string':raw_string}
         elif raw_string == "0642542154":
             self.mode = "capcom"
-            self.dial_string = ""
+            # self.dial_string = ""
             return {'client': self.mode, 'dial_string': raw_string}
-        # elif bool(re.match(r"^0053600100(0[1-9]|10)$", raw_string)):
-        #     self.mode = "dcnet"
-        #     self.dcnet_port = "7656"
-        #     self.dial_string = ""
-        #     self.logger.info("Calling VOOT server")
-        #     return {'client': self.mode, 'dial_string': raw_string}
         elif raw_string.startswith("#") and raw_string.endswith("#"):
             dial_string = raw_string.replace("#","")
             if len(dial_string) == 3 and dial_string[0] == "0": # This condition indicates a game is waiting for a call
@@ -511,7 +516,7 @@ class Netlink:
                     return {'client':self.mode,'dial_string':raw_string}
                 except TypeError: # there are other characters in the string. I don't know what this is.
                     self.mode = "idle"
-                    self.dial_string = ""
+                    # self.dial_string = ""
                     return {'client':self.mode,'dial_string':raw_string}
             else:
                 self.ms = "calling"
@@ -525,13 +530,14 @@ class Netlink:
                 # Check for dial modifiers
                 if time.time() - self.dial_modifier.get('modified') < 10:
                     self.mode = self.dial_modifier.get('modifier', 'PPP')
+                    self.dial_string = raw_string
                 else:
                     self.mode = "PPP"
-                self.dial_string = ""
+                    self.dial_string = raw_string
                 return {'client':self.mode,'dial_string':raw_string}
             else:
                 # self.mode = "idle"
-                self.dial_string = ""
+                # self.dial_string = ""
                 return {'client':"idle",'dial_string':raw_string}
 
     def initConnection(self):
@@ -1564,13 +1570,6 @@ class Netlink:
 
         try:
             while not stop.is_set():
-                if not ser.cd:
-                    time.sleep(0.05)
-                    if not ser.cd:
-                        self.logger.info("%s: Saturn hung up", label)
-                        stop.set()
-                        break
-
                 time.sleep(0.1)
 
         finally:
@@ -1726,8 +1725,11 @@ class Netlink:
             self.logger.info("DCNet Call answered!")
             path = self.dcnet_path
             process = os.path.basename(path)
+            if self.dial_string and re.match(r"^0053600100(0[1-9]|10|13|14|15|16)$", self.dial_string):
+                self.dcnet_port = "7656"
+                self.logger.info("Connecting to DCNet port 7656")
+
             cmd = [path, "-t", "{}".format(self.modem.device_name), "-b", "{}".format(self.modem.device_speed), "-p", self.dcnet_port]
-            self.logger.info(cmd)
 
             subprocess.Popen(cmd)
             
