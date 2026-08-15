@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202608141104
+#netlink_version=202608151237
 import sys
 
 if __name__ == "__main__":
@@ -124,6 +124,14 @@ class Netlink:
         # <Netlink Server Addition>
         self.servers = {}
         self.read_config()
+
+        # Hardcoded Sega Rally 2 addition
+        self.servers["0352002700"] = {
+            "host": "shumania.ddns.net",
+            "port": "21330",
+            "handler": "transparent",
+            "name": "SegaRally2",
+        }
 
         # check for serial port on linux and configure
         if self.osName in ['raspberry', 'linux']:
@@ -465,7 +473,7 @@ class Netlink:
         elif raw_string in self.servers:
             self.mode = "netlink_server"
             self.dial_string = raw_string
-            self.logger.debug("Netlink server connection requested")
+            self.logger.debug("Direct server connection requested")
             return {'client':self.mode,'dial_string':raw_string}
          # </Netlink Server Addition>
         elif raw_string == "*70":
