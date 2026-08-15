@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202605171237
+#netlink_version=202608141104
 import sys
 
 if __name__ == "__main__":
@@ -974,20 +974,48 @@ class Netlink:
 
     def getserial(self):
         cpuserial = b"0000000000000000"
-        if self.osName in ['raspberry', 'linux', 'mac']:
-            try:
-                f = open('/proc/cpuinfo','r')
-                for line in f:
-                    if line[0:6]=='Serial':
-                        cpuserial = line[10:26].encode()
-                f.close()
-                self.logger.info("Found valid CPU ID")
-            except:
-                cpuserial = b"ERROR000000000"
-                self.logger.info("Couldn't find valid CPU ID, using error ID")
-        else:
-            cpuserial = subprocess.check_output(["wmic","cpu","get","ProcessorId","/format:csv"]).strip().split(b",")[-1]
-            self.logger.info("Found valid CPU ID")
+        try:
+            if self.osName == 'raspberry':
+                with open('/proc/cpuinfo', 'r') as f:
+                    for line in f:
+                        if line.startswith('Serial'):
+                            cpuserial = line.split(':', 1)[1].strip().encode('ascii')
+                            break
+
+            elif self.osName == 'linux':
+                with open('/sys/class/dmi/id/product_uuid', 'r') as f:
+                    raw_id = f.read().strip()
+
+                raw_id = re.sub(r'[^A-Za-z0-9]', '', raw_id)
+                cpuserial = raw_id.encode('ascii')
+
+            elif self.osName == 'mac':
+                output = subprocess.check_output(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"])
+
+                for line in output.splitlines():
+                    if b"IOPlatformUUID" in line:
+                        cpuserial = line.split(b'"')[-2]
+                        cpuserial = re.sub(b'[^A-Za-z0-9]', b'', cpuserial)
+                        break
+
+            else:
+                # Windows
+                cpuserial = subprocess.check_output([
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-Command",
+                    "(Get-WmiObject Win32_Processor).ProcessorId"
+                ]).strip()
+
+            if not cpuserial or len(cpuserial) < 16 or len(cpuserial) > 32:
+                raise ValueError("Invalid machine ID")
+
+            self.logger.info("Found valid machine ID")
+
+        except Exception:
+            cpuserial = b"ERROR000000000"
+            self.logger.info("Couldn't find valid machine ID, using error ID")
+
         return cpuserial
 
     def xband_server(self):
