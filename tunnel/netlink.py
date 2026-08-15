@@ -247,36 +247,67 @@ class Netlink:
         elif (local_version is None) or (local_version < upstream_version):
             preserve_sections = ['Serial Port', 'DCNet']
 
-            def is_server_section(section):
-                return section.lower().startswith("server:")
+            def split_sections(text):
+                lines = text.splitlines(True)
+                preamble = []
+                sections = []
 
-            local_cfg = configparser.ConfigParser()
-            upstream_cfg = configparser.ConfigParser()
+                current_name = None
+                current_lines = []
 
-            if local_data:
-                local_cfg.read_string(local_data.decode("utf-8"))
+                for line in lines:
+                    stripped = line.strip()
 
-            upstream_cfg.read_string(upstream_data.decode("utf-8"))
+                    if stripped.startswith('[') and ']' in stripped:
+                        if current_name is None:
+                            preamble.extend(current_lines)
+                        else:
+                            sections.append((current_name, ''.join(current_lines)))
 
-            # 1. Preserve whole local sections
-            for section in preserve_sections:
-                if local_cfg.has_section(section):
-                    if not upstream_cfg.has_section(section):
-                        upstream_cfg.add_section(section)
-                    for key, val in local_cfg.items(section):
-                        upstream_cfg.set(section, key, val)
+                        current_name = stripped[1:stripped.index(']')].strip()
+                        current_lines = [line]
+                    else:
+                        current_lines.append(line)
 
-            # 2. Preserve local-only server sections.
-            # If the same server section exists upstream, upstream wins.
-            for section in local_cfg.sections():
-                if is_server_section(section) and not upstream_cfg.has_section(section):
-                    upstream_cfg.add_section(section)
-                    for key, val in local_cfg.items(section):
-                        upstream_cfg.set(section, key, val)
+                if current_name is None:
+                    preamble.extend(current_lines)
+                else:
+                    sections.append((current_name, ''.join(current_lines)))
 
-            # 3. Write merged result
-            with open(local_config, "w") as f:
-                upstream_cfg.write(f)
+                return ''.join(preamble), sections
+
+            upstream_text = upstream_data.decode("utf-8")
+            local_text = local_data.decode("utf-8") if local_data else ""
+
+            upstream_preamble, upstream_sections = split_sections(upstream_text)
+            _, local_sections = split_sections(local_text)
+
+            local_map = dict(local_sections)
+            upstream_names = set(name for name, text in upstream_sections)
+
+            merged_sections = []
+
+            # Use upstream as the base, except sections we want to preserve locally.
+            for name, text in upstream_sections:
+                if name in preserve_sections and name in local_map:
+                    merged_sections.append(local_map[name])
+                else:
+                    merged_sections.append(text)
+
+            # Add preserved sections that exist locally but not upstream.
+            for name in preserve_sections:
+                if name in local_map and name not in upstream_names:
+                    merged_sections.append(local_map[name])
+
+            # Add local-only server sections.
+            for name, text in local_sections:
+                if name.startswith('server:') and name not in upstream_names:
+                    merged_sections.append(text)
+
+            merged_data = upstream_preamble + ''.join(merged_sections)
+
+            with open(local_config, "wb") as f:
+                f.write(merged_data.encode("utf-8"))
 
             self.logger.info(
                 "config updated (v%s to v%s); preserved sections: %s",
@@ -284,7 +315,6 @@ class Netlink:
                 upstream_version,
                 preserve_sections
             )
-
         if not os.path.isfile(local_config):
             self.logger.info("no config file found to parse")
             return
@@ -801,8 +831,10 @@ class Netlink:
                 ping = time.time()
             ready = select.select([self.udp],[],[],0.001)
             if ready[0]:
-
-                packetSet, remote = self.udp.recvfrom(1024)
+                try:
+                    packetSet, remote = self.udp.recvfrom(1024)
+                except ConnectionResetError:
+                    continue
 
                 if packetSet == b'PING_SHIRO':
                     try:
@@ -905,14 +937,14 @@ class Netlink:
                 self.close_udp()
                 self.logger.info("Sender stopped")
                 return
-            if not self.modem._serial.cd:
-                print('')
-                self.logger.info("NO CD")
-                self.state = "netlink_disconnected"
-                time.sleep(1)
-                self.close_udp()
-                self.logger.info("Sender stopped")
-                return                
+            # if not self.modem._serial.cd:
+            #     print('')
+            #     self.logger.info("NO CD")
+            #     self.state = "netlink_disconnected"
+            #     time.sleep(1)
+            #     self.close_udp()
+            #     self.logger.info("Sender stopped")
+            #     return                
             
             try:
                 payload = raw_input
