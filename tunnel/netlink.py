@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202608151505
+#netlink_version=202608221102
 import sys
 
 if __name__ == "__main__":
@@ -1555,9 +1555,13 @@ class Netlink:
         def serial_reader():
             while not stop.is_set():
                 try:
-                    data = ser.read(READ_SIZE)
+                    data = ser.read(1)
                     if not data:
                         continue
+
+                    waiting = ser.in_waiting
+                    if waiting:
+                        data += ser.read(waiting)
 
                     modem_tail[0] = (modem_tail[0] + data)[-32:]
                     if b"NO CARRIER" in modem_tail[0]:
@@ -1571,6 +1575,7 @@ class Netlink:
                         )
 
                     to_sock.put(data)
+
                 except Exception as e:
                     self.logger.info("%s: serial read failed: %s", label, e)
                     stop.set()
@@ -1658,125 +1663,268 @@ class Netlink:
     def netlink_standard_server(self, server_cfg):
         """
         Handle server connection from config.
-        Answers the modem, connects to the configured TCP server,
-        authenticates if configured, and relays data bidirectionally.
+
+        Answers the modem, flushes leftover modem response/noise,
+        connects to the configured TCP server, authenticates if configured,
+        then relays data bidirectionally using independent reader/writer
+        threads for serial and TCP.
         """
         host = server_cfg['host']
         port = int(server_cfg['port'])
-        shared_secret = server_cfg.get('shared_secret', '').encode() if server_cfg.get('shared_secret') else None
+
+        shared_secret = (
+            server_cfg.get('shared_secret', '').encode()
+            if server_cfg.get('shared_secret')
+            else None
+        )
+
         auth_magic = server_cfg.get('auth_magic', 'AUTH').encode()
         auth_timeout = float(server_cfg.get('auth_timeout', '5.0'))
         label = server_cfg.get('name', host)
 
+        READ_SIZE = 4096
+        QUEUE_SIZE = 128
+
         self.modem.stop_dial_tone()
 
-        # Answer the modem call (same pattern as xband_server)
+        # Answer modem call
         if not self.modem_answer():
             self.logger.info("%s: ATA failed or timed out", label)
             return
 
-        self.modem._serial.timeout = 0  # non-blocking for relay polling
+        ser = self.modem._serial
 
-        # Flush any leftover CONNECT response / modem noise from serial buffer
+        # Non-blocking during startup flush
+        ser.timeout = 0
+
+        # Flush leftover CONNECT response / modem noise
         time.sleep(0.2)
-        while self.modem._serial.in_waiting:
-            self.modem._serial.read(self.modem._serial.in_waiting)
+
+        while ser.in_waiting:
+            ser.read(ser.in_waiting)
             time.sleep(0.05)
 
-        # Connect to server via TCP
+        # Resolve server address
         try:
             server_ip = socket.gethostbyname(host)
         except socket.gaierror as e:
-            self.logger.warn("%s: DNS resolution failed: %s" % (label, e))
+            self.logger.warning(
+                "%s: DNS resolution failed: %s", label, e
+            )
             return
 
-        s = socket.socket()
-        s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        s.settimeout(10)
+        # Connect to TCP server
         try:
-            s.connect((server_ip, port))
-            self.logger.info("%s: connected to %s:%d",
-                             label, server_ip, port)
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            sock.settimeout(10)
+
+            sock.connect((server_ip, port))
+
+            self.logger.info(
+                "%s: connected to %s:%d",
+                label,
+                server_ip,
+                port
+            )
+
         except (socket.error, OSError) as e:
-            self.logger.warn("%s: cannot connect to server: %s" % (label, e))
-            s.close()
-            return
+            self.logger.warning(
+                "%s: cannot connect to server: %s", label, e
+            )
+            if sock is not None:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+
+                return
 
         # Authenticate with shared secret
         if shared_secret:
             import struct
-            auth_payload = (auth_magic +
-                            struct.pack('B', len(shared_secret)) +
-                            shared_secret)
+
+            auth_payload = (
+                auth_magic +
+                struct.pack('B', len(shared_secret)) +
+                shared_secret
+            )
+
             try:
-                s.send(auth_payload)
-                s.settimeout(auth_timeout)
-                resp = s.recv(1)
+                sock.sendall(auth_payload)
+
+                sock.settimeout(auth_timeout)
+
+                resp = sock.recv(1)
+
                 if not resp or resp != b'\x01':
-                    self.logger.warn("%s: auth rejected by server", label)
-                    s.close()
+                    self.logger.warning(
+                        "%s: auth rejected by server",
+                        label
+                    )
+                    sock.close()
                     return
+
             except (socket.timeout, socket.error, OSError) as e:
-                self.logger.warn("%s: auth failed: %s" % (label, e))
-                s.close()
+                self.logger.warning(
+                    "%s: auth failed: %s", label, e
+                )
+                sock.close()
                 return
 
-            self.logger.info("%s: authenticated, relay active", label)
+            self.logger.info(
+                "%s: authenticated, relay active",
+                label
+            )
 
-        s.setblocking(False)
+        # TCP reader can now block normally.
+        sock.settimeout(None)
 
-        # Bidirectional relay: modem serial <-> TCP socket
-        modem_tail = b""
-        while True:
-            had_data = False
+        # Serial reader blocks until at least one byte arrives,
+        # but wakes every 50 ms while idle so it can notice shutdown.
+        ser.timeout = 0.05
 
-            # Server -> Modem
-            try:
-                ready = select.select([s], [], [], 0)
-                if ready[0]:
-                    data = s.recv(4096)
+        stop = threading.Event()
+
+        to_sock = queue.Queue(QUEUE_SIZE)
+        to_ser = queue.Queue(QUEUE_SIZE)
+
+        modem_tail = [b""]
+
+        def serial_reader():
+            while not stop.is_set():
+                try:
+                    # Wait for the first byte.
+                    data = ser.read(1)
+
                     if not data:
-                        self.logger.info("%s: server closed connection", label)
+                        continue
+
+                    # Immediately collect anything else already buffered.
+                    waiting = ser.in_waiting
+
+                    if waiting:
+                        data += ser.read(waiting)
+
+                    # NO CARRIER detection
+                    modem_tail[0] = (modem_tail[0] + data)[-32:]
+
+                    if b"NO CARRIER" in modem_tail[0]:
+                        self.logger.info(
+                            "%s: NO CARRIER detected",
+                            label
+                        )
+                        stop.set()
                         break
-                    self.modem._serial.write(data)
-                    had_data = True
-            except socket.error as e:
-                err = e.args[0]
-                if err == errno.EAGAIN or err == errno.EWOULDBLOCK:
-                    pass
-                else:
-                    self.logger.warn("%s: TCP error: %s" % (label, e))
+
+                    to_sock.put(data)
+
+                except Exception as e:
+                    self.logger.info(
+                        "%s: serial read failed: %s",
+                        label,
+                        e
+                    )
+                    stop.set()
                     break
 
-            # Modem -> Server
-            waiting = self.modem._serial.in_waiting
-            if waiting:
-                data = self.modem._serial.read(waiting)
-                if data:
-                    had_data = True
-                    # NO CARRIER detection (rolling tail buffer)
-                    modem_tail = (modem_tail + data)[-32:]
-                    if b"NO CARRIER" in modem_tail:
-                        self.logger.info("%s: NO CARRIER detected", label)
-                        break
-                    try:
-                        s.send(data)
-                    except (socket.error, OSError):
-                        self.logger.warn("%s: failed to send to server", label)
+        def socket_reader():
+            while not stop.is_set():
+                try:
+                    # Blocking recv returns as soon as TCP data is available.
+                    data = sock.recv(READ_SIZE)
+
+                    if not data:
+                        self.logger.info(
+                            "%s: server closed connection",
+                            label
+                        )
+                        stop.set()
                         break
 
-            # Carrier Detect pin check
-            if not self.modem._serial.cd:
-                time.sleep(2.0)
-                if not self.modem._serial.cd:
-                    self.logger.info("%s: Saturn hung up", label)
+                    to_ser.put(data)
+
+                except Exception as e:
+                    self.logger.info(
+                        "%s: socket read failed: %s",
+                        label,
+                        e
+                    )
+                    stop.set()
                     break
 
-            if not had_data:
-                time.sleep(0.01)
+        def serial_writer():
+            while not stop.is_set():
+                try:
+                    data = to_ser.get(True, 0.1)
 
-        s.close()
-        self.logger.info("%s: disconnected", label)   
+                except queue.Empty:
+                    continue
+
+                try:
+                    ser.write(data)
+
+                except Exception as e:
+                    self.logger.info(
+                        "%s: serial write failed: %s",
+                        label,
+                        e
+                    )
+                    stop.set()
+                    break
+
+        def socket_writer():
+            while not stop.is_set():
+                try:
+                    data = to_sock.get(True, 0.1)
+
+                except queue.Empty:
+                    continue
+
+                try:
+                    sock.sendall(data)
+
+                except Exception as e:
+                    self.logger.info(
+                        "%s: socket write failed: %s",
+                        label,
+                        e
+                    )
+                    stop.set()
+                    break
+
+        threads = [
+            threading.Thread(target=serial_reader),
+            threading.Thread(target=socket_reader),
+            threading.Thread(target=serial_writer),
+            threading.Thread(target=socket_writer),
+        ]
+
+        for t in threads:
+            t.daemon = True
+            t.start()
+
+        try:
+            while not stop.is_set():
+                time.sleep(0.1)
+
+        finally:
+            stop.set()
+
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except Exception:
+                pass
+
+            try:
+                sock.close()
+            except Exception:
+                pass
+
+            self.logger.info(
+                "%s: disconnected",
+                label
+            )
     # </Netlink Server Addition> 
     
     def modem_answer(self):
