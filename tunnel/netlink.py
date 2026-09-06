@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202608221102
+#netlink_version=202609041223
 import sys
 
 if __name__ == "__main__":
@@ -1399,7 +1399,7 @@ class Netlink:
                                 options = [
                                     "local",
                                     "lcp-echo-interval", "5",
-                                    "lcp-echo-failure", "2",
+                                    "lcp-echo-failure", "4",
                                     "lcp-max-terminate", "1",
                                     "novj",
                                     "debug",
