@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202609041223
+#netlink_version=202609072236
 import sys
 
 if __name__ == "__main__":
@@ -1392,7 +1392,7 @@ class Netlink:
                                 self.usb.write(b'OK\r\n')
                             elif payload == b'ATZ\r\n' or payload == b'ATZ\n':
                                 self.usb.write(b'OK\r\n')
-                            elif payload[:4] == b'ATDT':
+                            elif payload.strip()[:3] == b'ATD':
                                 self.usb.write(b'CONNECT ' + str(self.usb.baudrate).encode() + b'\r\n')
                                 self.logger.info("Call answered!")
 
