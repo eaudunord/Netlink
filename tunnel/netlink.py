@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202609081300
+#netlink_version=202609101330
 import sys
 
 if __name__ == "__main__":
@@ -315,6 +315,9 @@ class Netlink:
 
             with open(local_config, "wb") as f:
                 f.write(merged_data.encode("utf-8"))
+
+            if self.osName in ['raspberry', 'linux']:
+                os.chmod(local_config, 0o666)
 
             self.logger.info(
                 "config updated (v%s to v%s); preserved sections: %s",
@@ -948,7 +951,7 @@ class Netlink:
         packets = []
 
         try:
-            ser.timeout = 0.1
+            ser.timeout = 0.05
 
             # UDP send to improve hole punching probability
             try:
@@ -1597,7 +1600,8 @@ class Netlink:
                             "debug",
                             "ktune",
                             "noccp",
-                            "auth"
+                            "auth",
+                            "proxyarp"
                         ]
 
                         self.serial_buffer = b''
