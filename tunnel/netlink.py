@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202609101330
+#netlink_version=202609102228
 import sys
 
 if __name__ == "__main__":
@@ -1486,10 +1486,7 @@ class Netlink:
                 if not full_line:
                     continue
 
-                # Remove only surrounding spaces/tabs. Do not remove NULs
-                # or other arbitrary bytes, because a line containing junk
-                # should not be accepted as a Hayes command.
-                full_line = full_line.strip(b' \t')
+                full_line = full_line.strip(b' \t').strip(b'\x00')
 
                 self.logger.info("serial: %r" % full_line)
 
