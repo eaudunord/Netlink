@@ -2007,6 +2007,7 @@ class Netlink:
         auth_magic = server_cfg.get('auth_magic', 'AUTH').encode()
         auth_timeout = float(server_cfg.get('auth_timeout', '5.0'))
         label = server_cfg.get('name', host)
+        fix_ppp = server_cfg.get('ppp_fix_delimiters', 'false').lower() in ('true', '1', 'yes')
 
         READ_SIZE = 4096
         QUEUE_SIZE = 128
@@ -2118,6 +2119,7 @@ class Netlink:
         to_ser = queue.Queue(QUEUE_SIZE)
 
         modem_tail = [b""]
+        sat_prev_flag = [False]
 
         def serial_reader():
             escape_deadline = None
