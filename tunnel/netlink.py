@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202609102228
+#netlink_version=202609161542
 import sys
 
 if __name__ == "__main__":
@@ -85,6 +85,7 @@ class Netlink:
         self.serial_buffer_time = 0
         self.verbose = verbose
         self.osName = self.get_platform()
+        self.pppd_process = None
         self.dcnet = False
         self.dcnet_port = "7654"
         self.dcnet_path = "/home/pi/dreampi/dcnet.rpi"
@@ -143,13 +144,47 @@ class Netlink:
         if self.osName in ['raspberry', 'linux']:
             if self.usb_serial_port:
                 try:
-                    self.usb = serial.Serial(self.usb_serial_port, baudrate=self.usb_baud, rtscts=False, exclusive=True)
+                    self.usb = serial.Serial(self.usb_serial_port, 
+                    baudrate=self.usb_baud,
+                    rtscts=True,
+                    exclusive=False,
+                    timeout = self.usb_timeout,
+                    xonxoff = False,
+                    dsrdtr = False)
                     time.sleep(2) # Pyserial recommends giving OS 2 seconds to open port before changing settings
-                    self.usb.rts = True
-                    self.usb.timeout = self.usb_timeout
+                    try:
+                        self.logger.info("Startup check: CTS is %s" % self.usb.cts)
+                        self.logger.info("Startup Check: RTS is %s" % self.usb.rts)
+                    except serial.SerialException as e:
+                        self.logger.info(e)
                     self.logger.info("Serial device found! Serial port monitoring started on %s. PPP available." % self.usb_serial_port)
                 except serial.SerialException:
                     self.usb = None
+                if self.usb:
+                    ftdi_latency = 1
+                    try:
+                        command_str = (
+                            "sudo bash -c 'echo %s > "
+                            "/sys/bus/usb-serial/devices/%s/latency_timer'"
+                            % (
+                                ftdi_latency,
+                                self.usb_serial_port.split("/")[-1]
+                            )
+                        )
+
+                        with open(os.devnull, 'w') as devnull:
+                            subprocess.check_call(
+                                command_str,
+                                shell=True,
+                                stdout=devnull,
+                                stderr=devnull
+                            )
+
+                        self.logger.info("FTDI latency set to %s" % ftdi_latency)
+
+                    except Exception:
+                        self.logger.info("Skipping latency setting for non-FTDI device")
+
             else:
                 self.usb = None
 
@@ -587,8 +622,8 @@ class Netlink:
                     self.dial_string = raw_string
                 return {'client':self.mode,'dial_string':raw_string}
             else:
-                # self.mode = "idle"
-                # self.dial_string = ""
+                self.mode = "idle"
+                self.dial_string = ""
                 return {'client':"idle",'dial_string':raw_string}
 
     def initConnection(self, ser = None):
@@ -1526,33 +1561,38 @@ class Netlink:
 
                     if mode == "netlink":
                         self.usb.write(b'CONNECT ' + str(self.usb.baudrate).encode('ascii') + b'\r\n')
+                        self.usb.flush()
                         self.logger.info("Call answered!")
                         self.do_netlink(ser=self.usb)
-                        self.serial_buffer = b''
                         self.reset_serial()
                         return 0
 
                     if mode == "netlink_server":
                         self.usb.write(b'CONNECT ' + str(self.usb.baudrate).encode('ascii') + b'\r\n')
+                        self.usb.flush()
                         self.logger.info("Call answered!")
                         self.netlink_server(ser=self.usb)
-                        self.serial_buffer = b''
                         self.reset_serial()
                         return 0
 
                     if mode == "dcnet":
                         self.usb.write(b'CONNECT ' + str(self.usb.baudrate).encode('ascii') + b'\r\n')
+                        self.usb.flush()
                         self.logger.info("Call answered!")
                         self.dcnet_connect(ser=self.usb)
-                        self.serial_buffer = b''
                         self.reset_serial()
                         return 0
 
                     if mode == "capcom":
                         self.usb.write(b'CONNECT ' + str(self.usb.baudrate).encode('ascii') + b'\r\n')
+                        self.usb.flush()
                         self.logger.info("Call answered!")
+                        self.mode = "serial_ppp"
+                        self.usb.close()
+                        self.usb = None
 
                         options = [
+                            "local",
                             "auth",
                             "plugin", "pap_noempty.so",
                             "ktune",
@@ -1561,33 +1601,32 @@ class Netlink:
                             "lcp-echo-interval", "1",
                             "lcp-echo-failure", "4",
                             "lcp-max-terminate", "1",
-                            "lcp-restart", "1"
+                            "lcp-restart", "1",
+                            "crtscts",
+                            "connect", "/bin/sleep 5",
+                            "connect-delay", "0",
                         ]
-
-                        self.serial_buffer = b''
 
                         self.pppd_run(
                             device=self.usb_serial_port,
-                            speed=self.usb.baudrate,
+                            speed=self.usb_baud,
                             options=options
                         )
 
-                        if self.usb and self.usb.is_open:
-                            self.usb.flush()
-                            self.usb.close()
-                            self.usb = None
-
                         self.logger.info("CONNECT")
-                        self.mode = "serial_ppp"
                         return 0
 
                     if mode == "PPP":
                         self.usb.write(
                             b'CONNECT '
-                            + str(self.usb.baudrate).encode('ascii')
+                            + str(self.usb_baud).encode('ascii')
                             + b'\r\n'
                         )
+                        self.usb.flush()
                         self.logger.info("Call answered!")
+                        self.mode = "serial_ppp"
+                        self.usb.close()
+                        self.usb = None
 
                         options = [
                             "local",
@@ -1598,57 +1637,19 @@ class Netlink:
                             "ktune",
                             "noccp",
                             "auth",
-                            "proxyarp"
+                            "proxyarp",
+                            "crtscts",
+                            "connect", "/bin/sleep 5",
+                            "connect-delay", "0",
                         ]
-
-                        self.serial_buffer = b''
 
                         self.pppd_run(
                             device=self.usb_serial_port,
-                            speed=self.usb.baudrate,
+                            speed=self.usb_baud,
                             options=options
                         )
 
-                        if self.usb and self.usb.is_open:
-                            self.usb.flush()
-                            self.usb.close()
-                            self.usb = None
-
                         self.logger.info("CONNECT")
-                        self.mode = "serial_ppp"
-                        return 0
-
-                    if mode == "voot":
-                        self.usb.write(
-                            b'CONNECT '
-                            + str(self.usb.baudrate).encode('ascii')
-                            + b'\r\n'
-                        )
-                        self.logger.info("Call answered!")
-
-                        options = [
-                            "local",
-                            "debug",
-                            "ktune",
-                            "noccp",
-                            "auth"
-                        ]
-
-                        self.serial_buffer = b''
-
-                        self.pppd_run(
-                            device=self.usb_serial_port,
-                            speed=self.usb.baudrate,
-                            options=options
-                        )
-
-                        if self.usb and self.usb.is_open:
-                            self.usb.flush()
-                            self.usb.close()
-                            self.usb = None
-
-                        self.logger.info("CONNECT")
-                        self.mode = "serial_ppp"
                         return 0
 
                     self.logger.info("No handler for dial mode: %s" % mode)
@@ -1675,30 +1676,18 @@ class Netlink:
         dcnow = DreamcastNowService()
         dcnow.go_online("")
 
-            
-        for line in sh.tail("-F", "/var/log/messages", "-n", "1", _iter=True):
-            if "pppd" in line and "Exit" in line:#wait for pppd to execute the ip-down script
-                self.logger.info("Detected modem hang up, going back to listening")
-                break
-            if "pppd" in line and "Connection terminated." in line:
-                self.logger.info("pppd ip-down finished")
-                try:
-                    print(subprocess.check_output(['sudo', 'killall', 'pppd']))
-                    self.logger.info("kill 1")
-                    time.sleep(5)
-                    print(subprocess.check_output(['sudo', 'killall', 'pppd']))
-                    self.logger.info("kill 2")
-                    # why do I have to do this twice? pppd doesn't detect a hangup when ppp disconnects.
-                    # a cleaner solution would be preferable but this works
-                except Exception as e:
-                    print(e)
+        while self.pppd_process.poll() is None:
+            time.sleep(1)
+
+        status = self.pppd_process.returncode
+        self.logger.info("pppd exited with status %s", status)
+        self.pppd_process = None
         dreampi.remove_alias_interface()
         dcnow.go_offline() #changed dcnow to wait 15 seconds for event instead of sleeping. Should be faster.
         self.reset_serial()
 
 
     def reset_serial(self):
-        self.mode = "idle"
 
         # Close the existing serial connection first.
         if self.usb is not None:
@@ -1708,17 +1697,25 @@ class Netlink:
                 pass
             self.usb = None
 
-        try:
-            self.usb = serial.Serial(self.usb_serial_port, baudrate=self.usb_baud, rtscts=False, exclusive=True)
-            time.sleep(2)
-            self.usb.rts = True
-            self.usb.timeout = self.usb_timeout
-        except Exception as e:
-            self.logger.info(
-                "No active serial port detected: %s", e
-            )
-            self.usb = None
+        for attempt in range(5):
+            try:
+                self.usb = serial.Serial(self.usb_serial_port, 
+                    baudrate = self.usb_baud,
+                    rtscts = True,
+                    exclusive = False,
+                    timeout = self.usb_timeout,
+                    xonxoff = False,
+                    dsrdtr = False)
+                break
+            except Exception as e:
+                self.usb = None
+                self.logger.info(
+                    "Serial reopen attempt %d failed: %s",
+                    attempt + 1, e
+                )
+                time.sleep(0.5)
 
+        self.mode = "idle"
         self.logger.info("Reset serial port")
 
     #<Netlink Server Addition>
@@ -1806,11 +1803,12 @@ class Netlink:
             self.logger.info("%s: Connection failed: %s", label, e)
             return
         dcnow = None
+
         if use_dcnow and self.osName != "windows":
             try:
                 from dcnow import DreamcastNowService
                 dcnow = DreamcastNowService()
-                dcnow.go_online("", report_domain=False)
+                dcnow.go_online("")
             except Exception as e:
                 self.logger.info("%s: could not start DCNow session: %s", label, e)
                 dcnow = None
@@ -1949,6 +1947,7 @@ class Netlink:
                     self.logger.info("%s: socket write failed: %s", label, e)
                     stop.set()
                     break
+                    
 
         threads = [
             threading.Thread(target=serial_reader),
@@ -2007,6 +2006,8 @@ class Netlink:
         auth_magic = server_cfg.get('auth_magic', 'AUTH').encode()
         auth_timeout = float(server_cfg.get('auth_timeout', '5.0'))
         label = server_cfg.get('name', host)
+        fix_ppp = server_cfg.get('ppp_fix_delimiters', 'false').lower() in ('true', '1', 'yes')
+        use_dcnow = server_cfg.get('dcnow', 'false').lower() in ('true', '1', 'yes')
 
         READ_SIZE = 4096
         QUEUE_SIZE = 128
@@ -2118,6 +2119,18 @@ class Netlink:
         to_ser = queue.Queue(QUEUE_SIZE)
 
         modem_tail = [b""]
+        sat_prev_flag = [False]
+        srv_prev_flag = [False]
+
+        if use_dcnow and self.osName != "windows":
+            try:
+                from dcnow import DreamcastNowService
+                dcnow = DreamcastNowService()
+                dcnow.go_online("")
+            except Exception as e:
+                self.logger.info("%s: could not start DCNow session: %s", label, e)
+                dcnow = None
+
 
         def serial_reader():
             escape_deadline = None
@@ -2208,6 +2221,10 @@ class Netlink:
                         )
                         stop.set()
                         break
+                    if fix_ppp:
+                        data, srv_prev_flag[0] = self.ppp_fix_frame_delimiters(
+                            data, srv_prev_flag[0]
+                        )
 
                     to_ser.put(data)
 
@@ -2356,7 +2373,8 @@ class Netlink:
             return False
         
     def capcom(self):
-        if self.osName != 'raspberry':
+        if self.osName not in ['raspberry', 'linux']:
+            self.mode = 'idle'
             return
         self.modem.stop_dial_tone()
         if self.modem_answer():
@@ -2373,18 +2391,21 @@ class Netlink:
                 "lcp-max-terminate", "1",
                 "lcp-restart", "1"
             ]
-            self.pppd_run(device = self.modem._device, speed = self.modem._speed, options = options)
             self.modem.disconnect()
+            self.pppd_run(device = self.modem._device, speed = self.modem._speed, options = options)
             from dcnow import DreamcastNowService
             dcnow = DreamcastNowService()
             dcnow.go_online("")
-            for line in sh.tail("-F", "/var/log/messages", "-n", "1", _iter=True):
-                if "pppd" in line and "Exit" in line:#wait for pppd to execute the ip-down script
-                    self.logger.info("Detected modem hang up, going back to listening")
-                    break
+
+            while self.pppd_process.poll() is None:
+                time.sleep(1)
+
+            status = self.pppd_process.returncode
+            self.logger.info("pppd exited with status %s", status)
+            self.pppd_process = None
             dreampi.remove_alias_interface()
-            dcnow.go_offline() #changed dcnow to wait 15 seconds for event instead of sleeping. Should be faster.
-            self.mode = "idle"
+            dcnow.go_offline()
+            
             self.modem.connect()
             # If the ip-down was triggered by lcp echo failure, the modem often gets stuck in data mode. Fix that here. Harmless if modem isn't stuck.
             time.sleep(1.5)
@@ -2398,10 +2419,16 @@ class Netlink:
         else:
             self.modem.shake_it_off()
             self.reset()
+        self.mode = "idle"
         
     def pppd_run(self, device = None, speed = None, options = []):
         # self.logger.info([device, speed, options])
-        if self.osName != 'raspberry':
+        try:
+            text_type = unicode
+        except NameError:
+            text_type = str
+
+        if self.osName not in ['raspberry', 'linux']:
             return
         tun_ip =  dreampi.get_ip_address("tun0")
         if tun_ip is not None:
@@ -2409,10 +2436,9 @@ class Netlink:
                 for line in f:
                     if "ms-dns" in line:
                         self.dreamcast_ip = line.split(" ")[1].replace("\n", "")
-            tun_ip_obj = ipaddress.IPv4Address(unicode(tun_ip,'utf-8'))
+            tun_ip_obj = ipaddress.IPv4Address(tun_ip.decode('utf-8') if isinstance(tun_ip, bytes) else text_type(tun_ip))
             self.tun_dc_ip = tun_ip_obj + 1
             tun_this_ip = self.tun_dc_ip + 1
-            dreampi.create_alias_interface(self.dreamcast_ip, str(self.tun_dc_ip))
             
         else:
             with open("/etc/ppp/peers/dreamcast", "r") as f:
@@ -2420,7 +2446,7 @@ class Netlink:
                     if ":" in line:
                         self.dreamcast_ip = line.split(":")[1].replace("\n", "")
             self.tun_dc_ip = self.dreamcast_ip
-            tun_this_ip = ipaddress.IPv4Address(unicode(self.dreamcast_ip,'utf-8')) + 1
+            tun_this_ip = ipaddress.IPv4Address(self.dreamcast_ip.decode('utf-8') if isinstance(self.dreamcast_ip, bytes) else text_type(self.dreamcast_ip)) + 1
         
         pppd_args = [
             "pppd",
@@ -2430,18 +2456,22 @@ class Netlink:
         ]
 
         pppd_args.extend(options)
-
-        time.sleep(5)
         #  self.logger.info(pppd_args)
 
-        self.logger.info(subprocess.check_output(pppd_args).decode())
+        self.pppd_process = subprocess.Popen(
+            pppd_args + ["nodetach", "nopersist"],
+            close_fds=True
+        )
+
+        if tun_ip is not None:
+            dreampi.create_alias_interface(self.dreamcast_ip, str(self.tun_dc_ip))
 
 
     def poll(self):
         if time.time() - self.xband_timer > 900 and self.xband_listening:
             self.logger.info("Stop xband listening")
             self.close_xband()
-        if self.usb:
+        if self.mode == "idle" and self.usb:
             self.serial_poll()
         if self.mode == "idle":
             # don't burn CPU if idle
