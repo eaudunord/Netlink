@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202609161542
+#netlink_version=202609161557
 import sys
 
 if __name__ == "__main__":
@@ -147,7 +147,7 @@ class Netlink:
                     self.usb = serial.Serial(self.usb_serial_port, 
                     baudrate=self.usb_baud,
                     rtscts=True,
-                    exclusive=False,
+                    exclusive=True,
                     timeout = self.usb_timeout,
                     xonxoff = False,
                     dsrdtr = False)
@@ -1702,7 +1702,7 @@ class Netlink:
                 self.usb = serial.Serial(self.usb_serial_port, 
                     baudrate = self.usb_baud,
                     rtscts = True,
-                    exclusive = False,
+                    exclusive = True,
                     timeout = self.usb_timeout,
                     xonxoff = False,
                     dsrdtr = False)
