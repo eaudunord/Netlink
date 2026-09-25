@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202609161557
+#netlink_version=202609250915
 import sys
 
 if __name__ == "__main__":
@@ -984,6 +984,9 @@ class Netlink:
         self.logger.debug("Sending thread started. Sending to %s" % str(opponent))
         sequence = 0
         packets = []
+        escape_deadline = None
+        escape_buffer = b''
+        marker_tail = b''
 
         try:
             ser.timeout = 0.05
@@ -1002,12 +1005,45 @@ class Netlink:
                     self.logger.info("Serial device disconnected or failed: %s", e)
                     stop.set()
                     return
+                now = time.time()
                 if b"NO CARRIER" in raw_input:
                     print('')
                     self.logger.info("NO CARRIER")
                     stop.set()
                     self.logger.info("Sender stopped")
                     return
+                if escape_deadline is not None:
+                    # Accumulate bytes following a detected +++.
+                    escape_buffer = (escape_buffer + raw_input)[-64:]
+
+                else:
+                    # Retain two bytes so +++ can span multiple serial reads.
+                    scan = marker_tail + raw_input
+                    escape_pos = scan.find(b'+++')
+
+                    if escape_pos >= 0:
+                        self.logger.info("MODEM ESCAPE SEQUENCE")
+
+                        escape_deadline = now + 6
+
+                        # Preserve anything following +++ in this same read.
+                        escape_buffer = scan[escape_pos + 3:]
+
+                    marker_tail = scan[-2:]
+
+                if escape_deadline is not None:
+                    normalized = escape_buffer.upper()
+
+                    if b'ATH0' in normalized or b'ATZ0' in normalized:
+                        self.logger.info("DETECTED MODEM HANGUP: %r" , escape_buffer)
+                        stop.set()
+                        break
+
+                    if now >= escape_deadline:
+                        self.logger.info("MODEM ESCAPE WINDOW EXPIRED")
+                        escape_deadline = None
+                        escape_buffer = b''
+                        marker_tail = b''
                 
                 try:
                     payload = raw_input
@@ -1060,34 +1096,32 @@ class Netlink:
                 self.close_udp()
                 self.state = "netlink_disconnected"
 
-    def do_netlink(self, ser = None):
-        timeout = 60
+    def do_netlink(self):
         
         self.close_udp()
         state = "failed"
-        if ser is None:
-            timeout = 10
-            self.modem.stop_dial_tone()
-            try:
-                self.modem.connect_netlink(speed=57600,timeout=0.01,rtscts = True) #non-blocking version
-                self.modem.query_modem(b'AT%E0\V1')
-                self.modem.query_modem(b'AT%C0\N3')
-                self.modem.query_modem(b'AT&C1&D2')
-                # self.modem.query_modem(b'AT+MS=V32b,1,14400,14400,14400,14400') probably not necessary to be so explicit with rates and modulation
-                # self.modem.query_modem(b"ATA", timeout=30, response = "CONNECT")
-            except IOError:
-                return
-            if not self.modem_answer():
-                return
+        timeout = 10
+        self.modem.stop_dial_tone()
+        try:
+            self.modem.connect_netlink(speed=57600,timeout=0.01,rtscts = True) #non-blocking version
+            self.modem.query_modem(b'AT%E0\V1')
+            self.modem.query_modem(b'AT%C0\N3')
+            self.modem.query_modem(b'AT&C1&D2')
+            # self.modem.query_modem(b'AT+MS=V32b,1,14400,14400,14400,14400') probably not necessary to be so explicit with rates and modulation
+            # self.modem.query_modem(b"ATA", timeout=30, response = "CONNECT")
+        except IOError:
+            return
+        if not self.modem_answer():
+            return
 
         start = time.time()
         while time.time() - start < timeout:
-            state, opponent  = self.initConnection(ser = ser)
+            state, opponent  = self.initConnection()
             if state != "failed":
                 break
             time.sleep(1)
 
-        if state == "failed" and ser is None:
+        if state == "failed":
             for i in range(3): # escape sequence
                 self.modem._serial.write(b'+')
                 time.sleep(0.2)
@@ -1098,7 +1132,7 @@ class Netlink:
         if state == "failed":
             return
         
-        self.netlink_exchange(state, opponent, ser = ser)
+        self.netlink_exchange(state, opponent)
 
     def getserial(self):
         cpuserial = b"0000000000000000"
@@ -1530,14 +1564,20 @@ class Netlink:
                     #self.logger.info("Ignoring non-Hayes serial data")
                     continue
 
-                if full_line in (b'AT', b'ATZ', b'ATZ0'):
+                if full_line in (b'AT', b'ATZ', b'ATZ0', b'AT&F', b'AT&F0'):
                     self.usb.write(b'OK\r\n')
                     self.logger.info("OK")
                     continue
 
-                if full_line.startswith(b'ATD'):
+                # if full_line.startswith(b'ATD'):
+                #     raw_dial = bytes(bytearray(
+                #         c for c in full_line[3:]
+                #         if c in b'0123456789*#,'
+                #     )).decode('ascii')
+
+                if b'DT' in full_line:
                     raw_dial = bytes(bytearray(
-                        c for c in full_line[3:]
+                        c for c in full_line.split(b'DT')[-1]
                         if c in b'0123456789*#,'
                     )).decode('ascii')
 
@@ -1552,6 +1592,7 @@ class Netlink:
 
                     parsed = self.check_number(dial)
                     mode = parsed["client"]
+                    self.logger.info("Mode = %s" % mode)
 
                     if prefix == "*69":
                         mode = "dcnet"
@@ -1560,10 +1601,19 @@ class Netlink:
                     #     mode = "voot"
 
                     if mode == "netlink":
-                        self.usb.write(b'CONNECT ' + str(self.usb.baudrate).encode('ascii') + b'\r\n')
-                        self.usb.flush()
+                        timeout = 60
                         self.logger.info("Call answered!")
-                        self.do_netlink(ser=self.usb)
+                        start = time.time()
+                        while time.time() - start < timeout:
+                            state, opponent = self.initConnection(ser = self.usb)
+                            if state != "failed":
+                                break
+                            time.sleep(1)
+
+                        if state != "failed":
+                            self.usb.write(b'CONNECT ' + str(self.usb.baudrate).encode('ascii') + b'\r\n')
+                            self.usb.flush()
+                            self.netlink_exchange(state, opponent, ser = self.usb)
                         self.reset_serial()
                         return 0
 
@@ -1584,6 +1634,7 @@ class Netlink:
                         return 0
 
                     if mode == "capcom":
+                        self.usb.read(self.usb.in_waiting)
                         self.usb.write(b'CONNECT ' + str(self.usb.baudrate).encode('ascii') + b'\r\n')
                         self.usb.flush()
                         self.logger.info("Call answered!")
@@ -1598,13 +1649,11 @@ class Netlink:
                             "ktune",
                             "noccp",
                             "proxyarp",
-                            "lcp-echo-interval", "1",
+                            "lcp-echo-interval", "5",
                             "lcp-echo-failure", "4",
                             "lcp-max-terminate", "1",
                             "lcp-restart", "1",
-                            "crtscts",
-                            "connect", "/bin/sleep 5",
-                            "connect-delay", "0",
+                            "crtscts"
                         ]
 
                         self.pppd_run(
@@ -1617,6 +1666,7 @@ class Netlink:
                         return 0
 
                     if mode == "PPP":
+                        self.usb.read(self.usb.in_waiting)
                         self.usb.write(
                             b'CONNECT '
                             + str(self.usb_baud).encode('ascii')
@@ -1640,7 +1690,7 @@ class Netlink:
                             "proxyarp",
                             "crtscts",
                             "connect", "/bin/sleep 5",
-                            "connect-delay", "0",
+                            "connect-delay", "0"
                         ]
 
                         self.pppd_run(
@@ -1699,7 +1749,7 @@ class Netlink:
 
         for attempt in range(5):
             try:
-                self.usb = serial.Serial(self.usb_serial_port, 
+                self.usb = serial.Serial(self.usb_serial_port,
                     baudrate = self.usb_baud,
                     rtscts = True,
                     exclusive = True,
@@ -1714,7 +1764,6 @@ class Netlink:
                     attempt + 1, e
                 )
                 time.sleep(0.5)
-
         self.mode = "idle"
         self.logger.info("Reset serial port")
 
@@ -2391,8 +2440,8 @@ class Netlink:
                 "lcp-max-terminate", "1",
                 "lcp-restart", "1"
             ]
-            self.modem.disconnect()
             self.pppd_run(device = self.modem._device, speed = self.modem._speed, options = options)
+            self.modem.disconnect()
             from dcnow import DreamcastNowService
             dcnow = DreamcastNowService()
             dcnow.go_online("")
@@ -2413,7 +2462,13 @@ class Netlink:
                 self.modem._serial.write(b'+')
                 time.sleep(0.2)
             time.sleep(1.5)
-            self.modem.query_modem("ATH0")
+            try:
+                self.modem.query_modem("ATH0")
+            except IOError:
+                # Modem didn't acknowledge the hang up. Don't take the daemon
+                # down over it - start_dial_tone() calls reset(), which will
+                # shake_it_off() if the modem is still stuck in data mode.
+                self.logger.warning("No response to ATH0 after hang up, continuing")
             time.sleep(1)
             self.modem.start_dial_tone()
         else:
@@ -2447,7 +2502,10 @@ class Netlink:
                         self.dreamcast_ip = line.split(":")[1].replace("\n", "")
             self.tun_dc_ip = self.dreamcast_ip
             tun_this_ip = ipaddress.IPv4Address(self.dreamcast_ip.decode('utf-8') if isinstance(self.dreamcast_ip, bytes) else text_type(self.dreamcast_ip)) + 1
-        
+
+        if tun_ip is not None:
+            dreampi.create_alias_interface(self.dreamcast_ip, str(self.tun_dc_ip))
+
         pppd_args = [
             "pppd",
             device, str(speed),
@@ -2458,13 +2516,14 @@ class Netlink:
         pppd_args.extend(options)
         #  self.logger.info(pppd_args)
 
+
+        
         self.pppd_process = subprocess.Popen(
             pppd_args + ["nodetach", "nopersist"],
             close_fds=True
         )
 
-        if tun_ip is not None:
-            dreampi.create_alias_interface(self.dreamcast_ip, str(self.tun_dc_ip))
+
 
 
     def poll(self):
