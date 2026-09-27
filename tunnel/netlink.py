@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202609261632
+#netlink_version=202609271036
 import sys
 
 if __name__ == "__main__":
@@ -1568,6 +1568,9 @@ class Netlink:
                 if not full_line.startswith(b'AT'):
                     #self.logger.info("Ignoring non-Hayes serial data")
                     continue
+
+                # We have a possible AT command. Remove spaces before checking what it is.
+                full_line = full_line.replace(b' ',b'')
 
                 if full_line in (b'AT', b'ATZ', b'ATZ0', b'AT&F', b'AT&F0'):
                     self.usb.write(b'OK\r\n')
