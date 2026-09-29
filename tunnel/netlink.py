@@ -1565,12 +1565,12 @@ class Netlink:
                 self.logger.info("serial: %r" % full_line)
 
                 # Act only on lines that genuinely begin with AT.
-                if not full_line.startswith(b'AT'):
+                if not (full_line.startswith(b'AT') or full_line.upper().startswith(b'ATDT')):
                     #self.logger.info("Ignoring non-Hayes serial data")
                     continue
 
                 # We have a possible AT command. Remove spaces before checking what it is.
-                full_line = full_line.replace(b' ',b'')
+                full_line = full_line.replace(b' ',b'').upper()
 
                 if full_line in (b'AT', b'ATZ', b'ATZ0', b'AT&F', b'AT&F0'):
                     self.usb.write(b'OK\r\n')
