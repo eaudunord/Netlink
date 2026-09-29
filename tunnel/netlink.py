@@ -1657,7 +1657,7 @@ class Netlink:
                             "ktune",
                             "noccp",
                             "proxyarp",
-                            "lcp-echo-interval", "5",
+                            "lcp-echo-interval", "1",
                             "lcp-echo-failure", "4",
                             "lcp-max-terminate", "1",
                             "lcp-restart", "1",
