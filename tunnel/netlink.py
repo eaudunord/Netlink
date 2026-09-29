@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202609271036
+#netlink_version=202609291736
 import sys
 
 if __name__ == "__main__":
@@ -152,7 +152,7 @@ class Netlink:
                     xonxoff = False,
                     dsrdtr = False)
                     # time.sleep(2) # Pyserial recommends giving OS 2 seconds to open port before changing settings
-                    self.usb.break_condition = True
+                    # self.usb.break_condition = True
                     try:
                         self.logger.info("Startup check: CTS is %s" % self.usb.cts)
                         self.logger.info("Startup Check: RTS is %s" % self.usb.rts)
@@ -1517,7 +1517,7 @@ class Netlink:
             # Data is available so leave break condition do to read/write etc. 
             # Break is normally on to keep TX from going high on dreamcast boot
             # and causing weirdness in the boot process.
-            self.usb.break_condition = False
+            # self.usb.break_condition = False
             received = self.usb.read(waiting)
             if not received:
                 return 0
@@ -1725,10 +1725,10 @@ class Netlink:
             )
             self.serial_buffer = b''
             self.usb = None
-        finally:
-            # restore break condition baseline
-            if self.usb is not None:
-                self.usb.break_condition = True
+        # finally:
+        #     # restore break condition baseline
+        #     if self.usb is not None:
+        #         self.usb.break_condition = True
         return 0
         
     def serial_ppp(self):
@@ -1767,7 +1767,7 @@ class Netlink:
                     timeout = self.usb_timeout,
                     xonxoff = False,
                     dsrdtr = False)
-                self.usb.break_condition = True
+                # self.usb.break_condition = True
                 break
             except Exception as e:
                 self.usb = None
