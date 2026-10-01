@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202609291759
+#netlink_version=202610011517
 import sys
 
 if __name__ == "__main__":
@@ -1492,10 +1492,11 @@ class Netlink:
 
     def serial_poll(self):
         if not self.usb:
+            self.reset_serial()
             return 0
 
-        if self.usb.timeout != self.usb_timeout:
-            self.usb.timeout = self.usb_timeout
+        # if self.usb.timeout != self.usb_timeout:
+        #     self.usb.timeout = self.usb_timeout
 
         try:
             # If an unterminated fragment has been sitting idle, treat it as debug/noise
@@ -1724,7 +1725,11 @@ class Netlink:
                 "Stopping serial port monitoring"
             )
             self.serial_buffer = b''
-            self.usb = None
+            # try:
+            #     self.usb.close()
+            # except Exception as e:
+            #     self.logger.info(e)
+            # self.usb = None
         # finally:
         #     # restore break condition baseline
         #     if self.usb is not None:
@@ -1768,6 +1773,7 @@ class Netlink:
                     xonxoff = False,
                     dsrdtr = False)
                 # self.usb.break_condition = True
+                self.logger.info("Reset serial port")
                 break
             except Exception as e:
                 self.usb = None
@@ -1777,7 +1783,6 @@ class Netlink:
                 )
                 time.sleep(0.5)
         self.mode = "idle"
-        self.logger.info("Reset serial port")
 
     #<Netlink Server Addition>
     def netlink_server(self, ser = None):
@@ -2542,8 +2547,19 @@ class Netlink:
         if time.time() - self.xband_timer > 900 and self.xband_listening:
             self.logger.info("Stop xband listening")
             self.close_xband()
-        if self.mode == "idle" and self.usb:
-            self.serial_poll()
+        if self.mode == "idle" and (self.usb or os.path.exists(self.usb_serial_port)):
+            if self.usb and not os.path.exists(self.usb_serial_port):
+                self.logger.info(
+                    "USB serial device disconnected. "
+                    "Stopping serial port monitoring"
+                )
+                try:
+                    self.usb.close()
+                except Exception as e:
+                    self.logger.info(e)
+                self.usb = None
+            else:
+                self.serial_poll()
         if self.mode == "idle":
             # don't burn CPU if idle
             time.sleep(0.05)
