@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202610042321
+#netlink_version=202610051058
 import sys
 
 if __name__ == "__main__":
@@ -523,6 +523,8 @@ class Netlink:
         return ' '.join('{:02X}'.format(ord(c) if isinstance(c, str) else c) for c in data)
     
     def digit_parser(self):
+        # use timeout to make a short blocking read to make sure we get the bytes
+        self.modem._serial.timeout = 0.3
         last_heard = time.time()
         raw_string = ""
         tel_digits = ['0','1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '#']
@@ -530,7 +532,7 @@ class Netlink:
         if char in tel_digits:
             raw_string += char
             while True:
-                if time.time() - last_heard > 2:
+                if time.time() - last_heard > 1.5:
                     break
                 try:
                     char = self.modem._serial.read(1).decode() #first character was <DLE>, what's next?
@@ -541,6 +543,8 @@ class Netlink:
                         raw_string += char
                 except (TypeError, ValueError):
                     pass
+        # restore non-blocking modem
+        self.modem._serial.timeout = 0
         return self.check_number(raw_string)
 
     def check_number(self, raw_string):
@@ -629,9 +633,12 @@ class Netlink:
                     self.dial_string = raw_string
                 return {'client':self.mode,'dial_string':raw_string}
             else:
-                self.mode = "idle"
-                self.dial_string = ""
-                return {'client':"idle",'dial_string':raw_string}
+                # empty raw_string. The modem will periodically report "silence" so this will reset the mode
+                # it's not a particularly good way to do it. Should be revised in tandem with dreampi script.
+                if self.mode == "PPP":
+                    self.mode = "idle"
+                    self.dial_string = ""
+                return {'client':"idle",'dial_string':''}
 
     def initConnection(self, ser = None):
         tcp = None
@@ -1264,7 +1271,7 @@ class Netlink:
             self.close_udp()
         if self.xband_init == False:
             self.xband_setup()
-        if time.time() - self.xband_timer < 15: # an xband call should start right away. Don't listen if you don't have to.
+        if time.time() - self.xband_timer < 10: # an xband call should start right away. Don't listen if you don't have to.
             self.logger.debug("Exiting xband_match function. t < 15")
             return
         if time.time() - self.xband_timer > 900:
@@ -1323,6 +1330,8 @@ class Netlink:
             self.xband_sock.bind(('', PORT))
             self.xband_sock.listen(5)
         self.xband_listening = True
+        # go idle so xband listening isn't the only thing the pi can do for the next 15 minutes
+        self.mode = "idle"
         self.logger.debug("open_xband. Listening socket exists")
 
     def close_xband(self):
@@ -2568,6 +2577,8 @@ class Netlink:
         if time.time() - self.xband_timer > 900 and self.xband_listening:
             self.logger.info("Stop xband listening")
             self.close_xband()
+        if self.xband_listening:
+            self.xband_match()
         if self.mode == "idle" and (self.usb or os.path.exists(self.usb_serial_port)):
             if self.usb and not os.path.exists(self.usb_serial_port):
                 self.logger.info(
@@ -2585,7 +2596,7 @@ class Netlink:
             # don't burn CPU if idle
             time.sleep(0.05)
             return 0
-        elif self.mode == "PPP":
+        if self.mode == "PPP":
             return 0
         else:
             return self.mode_handler()
@@ -2595,6 +2606,7 @@ class Netlink:
             self.do_netlink()
             self.reset()
         elif self.mode == "xband_matching":
+            self.logger.debug("xband matching mode")
             self.xband_match()
         elif self.mode == "xband_server":
             self.xband_server()
