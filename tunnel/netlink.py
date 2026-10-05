@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202610011517
+#netlink_version=202610042321
 import sys
 
 if __name__ == "__main__":
@@ -87,6 +87,7 @@ class Netlink:
         self.osName = self.get_platform()
         self.pppd_process = None
         self.dcnet = False
+        self.vpn = False
         self.dcnet_port = "7654"
         self.dcnet_path = "/home/pi/dreampi/dcnet.rpi"
         # set up a way to use dial prefixes to change functionality
@@ -549,6 +550,11 @@ class Netlink:
             self.dial_string = raw_string
             return {'client':self.mode,'dial_string':raw_string}
         # <Netlink Server Addition>
+        if raw_string in ["9"]:
+            # dial prefix requesting VPN connection
+            self.vpn = True
+            self.mode = "idle"
+            return {'client':self.mode, 'dial_string':raw_string}
         elif raw_string in self.servers:
             self.mode = "netlink_server"
             self.dial_string = raw_string
@@ -799,7 +805,7 @@ class Netlink:
             return [False, (None, None)]
 
     def get_match(self, game_id, ip_address, port):
-        params = {"action" : 'match', 
+        params = {"action" : 'match',
                     "gameID" : game_id, 
                     "client_ip" : ip_address, 
                     "port" : port, 
@@ -842,23 +848,34 @@ class Netlink:
             return False, None
 
     def getWanIP(self, Port):
+        external_ip, external_port = [None, None]
         if not self.udp:
             self.udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self.udp.setsockopt(socket.IPPROTO_IP, socket.IP_TOS, 184)
             self.udp.settimeout(2)
             self.udp.bind(('', Port))
 
-        try:
-            nat_type, info  = stun.get_nat_type(s=self.udp, source_ip='', source_port=Port, stun_host="stun.l.google.com", stun_port=19302)
-            external_ip = info['ExternalIP']
-            external_port = info['ExternalPort']
-            external_ip = "".join([x.zfill(3) for x in external_ip.split(".")])
-        except AttributeError:
-            self.logger.info("Couldn't get WAN information")
-            return None, None
-        except KeyError: # it's possible for initial tunnel data to be interpreted as a STUN response depending on timing and it'll throw an exception
-            self.logger.info("Ignoring invalid response")
-            return None, None
+        if self.vpn:
+            try:
+                external_ip = dreampi.get_ip_address("tun0")
+                if external_ip:
+                    self.logger.info("Found VPN address: %s" % external_ip)
+                external_ip = "".join([x.zfill(3) for x in external_ip.split(".")])
+                external_port = str(Port)
+
+            except ModuleNotFoundError:
+                self.logger.info("VPN only available on Dreampi")
+
+        if external_ip is None:
+            try:
+                nat_type, info  = stun.get_nat_type(s=self.udp, source_ip='', source_port=Port, stun_host="stun.l.google.com", stun_port=19302)
+                external_ip = info['ExternalIP']
+                external_port = info['ExternalPort']
+                external_ip = "".join([x.zfill(3) for x in external_ip.split(".")])
+            except AttributeError:
+                self.logger.info("Couldn't get WAN information")
+            except KeyError: # it's possible for initial tunnel data to be interpreted as a STUN response depending on timing and it'll throw an exception
+                self.logger.info("Ignoring invalid response")
         return external_ip, external_port
 
     def listener(self, opponent, ser, stop):
@@ -1130,10 +1147,8 @@ class Netlink:
             self.modem.send_command('ATH0')
             return
         
-        if state == "failed":
-            return
-        
         self.netlink_exchange(state, opponent)
+
 
     def getserial(self):
         cpuserial = b"0000000000000000"
@@ -1487,6 +1502,7 @@ class Netlink:
         except Exception:
             pass
         self.modem.start_dial_tone()
+        self.vpn = False
         self.mode = "idle"
         self.state = "starting"
 
@@ -1599,12 +1615,16 @@ class Netlink:
 
                     self.logger.info("Dial prefix: %s, number: %s" % (prefix, dial))
 
+                    if prefix:
+                        self.check_number(prefix)
+
                     parsed = self.check_number(dial)
                     mode = parsed["client"]
                     self.logger.info("Mode = %s" % mode)
 
-                    if prefix == "*69":
-                        mode = "dcnet"
+                    if mode == "netlink" and dial in ("#035#", "#135#"):
+                        self.usb.baudrate = 223214
+                        self.logger.info("changing baudrate to %s" % self.usb.baudrate)
 
                     # if re.match(r"^0053600100(0[1-9]|10|13|14|15|16)$", dial):
                     #     mode = "voot"
@@ -1689,10 +1709,10 @@ class Netlink:
 
                         options = [
                             "local",
-                            "lcp-echo-interval", "5",
+                            "lcp-echo-interval", "3",
                             "lcp-echo-failure", "4",
                             "lcp-max-terminate", "1",
-                            "debug",
+                            # "debug",
                             "ktune",
                             "noccp",
                             "auth",
@@ -1782,6 +1802,7 @@ class Netlink:
                     attempt + 1, e
                 )
                 time.sleep(0.5)
+        self.vpn = False
         self.mode = "idle"
 
     #<Netlink Server Addition>
