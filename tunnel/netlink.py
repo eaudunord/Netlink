@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202610071619
+#netlink_version=202610071802
 import sys
 
 if __name__ == "__main__":
@@ -890,6 +890,7 @@ class Netlink:
                 self.logger.info("Couldn't get WAN information")
             except KeyError: # it's possible for initial tunnel data to be interpreted as a STUN response depending on timing and it'll throw an exception
                 self.logger.info("Ignoring invalid response")
+        # self.logger.info(str(external_ip) +" " + str(external_port))
         return external_ip, external_port
 
     def listener(self, opponent, ser, stop):
@@ -2619,6 +2620,7 @@ class Netlink:
                     return result
             
             if not status:
+                self.close_udp()
                 self.ms = "waiting"
                 my_ip = None
                 ext_port = None
