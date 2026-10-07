@@ -4,7 +4,7 @@ Created on Thu May 19 08:01:31 2022
 
 @author: joe
 """
-#netlink_version=202610051058
+#netlink_version=202610071619
 import sys
 
 if __name__ == "__main__":
@@ -63,7 +63,6 @@ class Netlink:
         self.state = "starting"
         self.poll_rate = 0.01
         self.matching = True
-        self.udp = None
         self.mode = "idle"
         self.ms = None
         self.dial_string = ""
@@ -642,11 +641,16 @@ class Netlink:
 
     def initConnection(self, ser = None):
         tcp = None
+        result = ["failed", None]
+        self.my_ip = None
+        self.ext_port = None
+        registered = False
+        last_STUN = 0
+        my_ip, ext_port = [None, None]
+
         try:
             if ser is None:
                 ser = self.modem._serial
-            result = ["failed", None]
-            self.my_ip = None
             tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             opponent = self.dial_string.replace('*','.')
             ip_set = opponent.split('.')
@@ -654,13 +658,10 @@ class Netlink:
                 fixed = str(int(set))
                 ip_set[i] = fixed
             opponent = ('.').join(ip_set)
-            registered = False
-            last_STUN = 0
-            my_ip, ext_port = [None, None]
+
 
             if self.ms == "waiting":
                 self.logger.info("Waiting")
-                registered = False
                 timerStart = time.time()
                 PORT = 65432
                 tcp.settimeout(20)
@@ -668,13 +669,12 @@ class Netlink:
                 tcp.listen(5)
                 while True:
                     if time.time() - timerStart > 120:
-                        if len(self.dial_string) == 3 and registered:
-                            self.timed_out(self.dial_string[-2:], self.my_ip)
                         result = ["failed", None]
                         break
-                    ready = select.select([tcp], [], [],0) # listen for the traditional direct connection attempt
+                    ready = select.select([tcp], [], [],0.1) # listen for the traditional direct connection attempt
                     if ready[0]:
                         conn, addr = tcp.accept()
+                        conn.settimeout(10)
                         opponent = addr[0]
                         self.logger.info('Connection from %s' % str(opponent))
                         while True:
@@ -703,23 +703,26 @@ class Netlink:
                                 my_ip, ext_port = self.getWanIP(20001) # Periodically STUN to maintain port mapping, discover if changes.
                                 last_STUN = time.time()
                             if my_ip and ext_port: # only update if the function returns good info
-                                self.my_ip = my_ip
-                                self.ext_port = ext_port 
-                            if self.my_ip:
+                                if my_ip != self.my_ip or ext_port != self.ext_port:
+                                    if registered:
+                                        self.timed_out(self.dial_string[-2:], self.my_ip)
+                                    self.my_ip = my_ip
+                                    self.ext_port = ext_port
+                                    registered = False
                                 if not registered:
                                     if self.register(self.dial_string[-2:], self.my_ip, self.ext_port):
                                         registered = True
-                                elif registered:
-                                    status, opponent = self.get_status(self.dial_string[-2:], self.my_ip)
-                                    if status:
-                                        self.logger.info("Sending Ring")
-                                        ser.write(("RING\r\n").encode())
-                                        ser.write(("CONNECT\r\n").encode())
-                                        self.logger.info("Ready for Data Exchange!")
-                                        result = ["connected",opponent]
-                                        break
+                            if registered:
+                                status, opponent = self.get_status(self.dial_string[-2:], self.my_ip)
+                                if status:
+                                    self.logger.info("Sending Ring")
+                                    ser.write(("RING\r\n").encode())
+                                    ser.write(("CONNECT\r\n").encode())
+                                    self.logger.info("Ready for Data Exchange!")
+                                    result = ["connected",opponent]
+                                    break
                             else:
-                                self.logger.info("Couldn't get WAN information. Won't register for match. Trying again in 1 second")
+                                self.logger.info("Couldn't register. Trying again in 1 second")
                             time.sleep(1)
 
 
@@ -763,12 +766,16 @@ class Netlink:
                                 
             return result
         finally:
-            if tcp is not None:
-                tcp.close()
+            try:
+                if registered and result[0] != "connected":
+                    self.timed_out(self.dial_string[-2:], self.my_ip)
+            finally:
+                if tcp is not None:
+                    tcp.close()
 
 
     def register(self, game_id, ip_address, port):
-        params = {"action" : 'wait', 
+        params = {"action" : 'wait',
                     "gameID" : game_id, 
                     "client_ip" : ip_address, 
                     "port" : port, 
@@ -787,7 +794,7 @@ class Netlink:
             return False
         
     def get_status(self, game_id, ip_address):
-        params = {"action" : 'status', 
+        params = {"action" : 'status',
                     "gameID" : game_id, 
                     "client_ip" : ip_address, 
                     "key" :'mySuperSecretSaturnKey1234'
@@ -854,7 +861,7 @@ class Netlink:
             self.logger.info("Couldn't connect to matching server")
             return False, None
 
-    def getWanIP(self, Port):
+    def getWanIP(self, Port, vpn = False):
         external_ip, external_port = [None, None]
         if not self.udp:
             self.udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -862,7 +869,7 @@ class Netlink:
             self.udp.settimeout(2)
             self.udp.bind(('', Port))
 
-        if self.vpn:
+        if self.vpn or vpn:
             try:
                 external_ip = dreampi.get_ip_address("tun0")
                 if external_ip:
@@ -1634,6 +1641,15 @@ class Netlink:
                     if mode == "netlink" and dial in ("#035#", "#135#"):
                         self.usb.baudrate = 223214
                         self.logger.info("changing baudrate to %s" % self.usb.baudrate)
+                        state, opponent = self.taisen_link()
+                        if state != "failed":
+                            self.usb.write(b'CONNECT\r\n')
+                            self.usb.flush()
+                            self.netlink_exchange(state, opponent, ser = self.usb)
+                        self.reset_serial()
+                        return 0
+
+
 
                     # if re.match(r"^0053600100(0[1-9]|10|13|14|15|16)$", dial):
                     #     mode = "voot"
@@ -2570,7 +2586,74 @@ class Netlink:
             close_fds=True
         )
 
+    def taisen_link(self):
+        self.close_udp()
+        self.ms = None
+        result = ["failed", None]
+        timerStart = time.time()
+        timeout = 60
+        registered = False
+        last_STUN = 0
+        status = None
+        my_ip = None
+        ext_port = None
 
+        try:       
+            # connect to the matchmaking server and get a match
+            for i in range(5):
+                my_ip, ext_port = self.getWanIP(20002)
+                if my_ip and ext_port:
+                    break
+
+            if not my_ip:
+                return result
+
+            if my_ip and ext_port: # only update if the function returns good data
+                self.my_ip = my_ip
+                self.ext_port = ext_port
+                status, opponent = self.get_match(self.dial_string[-2:], self.my_ip, self.ext_port)
+                if status:
+                    self.ms = "calling"
+                    self.logger.info("Ready for Data Exchange!")
+                    result = ["connected", opponent]
+                    return result
+            
+            if not status:
+                self.ms = "waiting"
+                my_ip = None
+                ext_port = None
+                while time.time() - timerStart < timeout:
+                    if time.time() - last_STUN > 5:
+                        my_ip, ext_port = self.getWanIP(20001) # Periodically STUN to maintain port mapping, discover if changes.
+                        last_STUN = time.time()
+                    if my_ip and ext_port: # only update if the function returns good info
+                        if my_ip != self.my_ip or ext_port != self.ext_port:
+                            if registered:
+                                self.timed_out(self.dial_string[-2:], self.my_ip)
+                            self.my_ip = my_ip
+                            self.ext_port = ext_port
+                            registered = False
+
+                        if not registered:
+                            if self.register(self.dial_string[-2:], self.my_ip, self.ext_port):
+                                registered = True
+                    if registered:
+                        status, opponent = self.get_status(self.dial_string[-2:], self.my_ip)
+                        if status:
+                            self.logger.info("Ready for Data Exchange!")
+                            result = ["connected",opponent]
+                            break
+                    # else:
+                    #     self.logger.info("Couldn't get WAN information. Won't register for match. Trying again in 5 seconds")
+                    time.sleep(1)
+
+            return result
+        finally:
+            if registered and result[0] != "connected":
+                self.timed_out(self.dial_string[-2:], self.my_ip)
+            self.close_udp()
+
+            
 
 
     def poll(self):
@@ -2594,7 +2677,8 @@ class Netlink:
                 self.serial_poll()
         if self.mode == "idle":
             # don't burn CPU if idle
-            time.sleep(0.05)
+            # time.sleep(0.01)
+            # adding too big of a sleep here disrupts dial tone playback
             return 0
         if self.mode == "PPP":
             return 0
